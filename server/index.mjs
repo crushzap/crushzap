@@ -49,7 +49,8 @@ app.use(express.static(distPath))
 
 // Rota catch-all para SPA (React)
 // Qualquer requisição que não seja API será redirecionada para o index.html
-app.get('*', (req, res) => {
+// Nota: Express 5 não suporta mais '*' como wildcard string simples. Usando RegExp.
+app.get(/.*/, (req, res) => {
   if (req.path.startsWith('/api')) {
     // Se for api e não encontrou rota, retorna 404 JSON
     return res.status(404).json({ error: 'Endpoint não encontrado' })
