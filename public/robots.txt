@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /entrar
+Disallow: /dashboard
+Disallow: /personas
+Disallow: /planos
+Disallow: /clientes
+Disallow: /configuracao-persona
+Disallow: /configuracoes
+Disallow: /conversas
+Disallow: /assinaturas
+Disallow: /whatsapp
+Sitemap: https://crushzap.com.br/sitemap.xml

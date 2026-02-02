@@ -1,0 +1,301 @@
+{
+  "last_node_id": 14,
+  "last_link_id": 12,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "CheckpointLoaderSimple",
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "sdxl_base_1.0.safetensors"
+      },
+      "pos": [
+        80,
+        80
+      ]
+    },
+    {
+      "id": 2,
+      "type": "CLIPTextEncode",
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "mulher adulta, fotorealista, iluminação natural, pele realista, detalhes do rosto",
+        "clip": [
+          1,
+          "CLIP"
+        ]
+      },
+      "pos": [
+        80,
+        260
+      ]
+    },
+    {
+      "id": 3,
+      "type": "CLIPTextEncode",
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "bad anatomy, deformed, child, underage, male, text, watermark, extra fingers, low quality, plastic skin, doll-like, porcelain, wax, CGI, 3d render, anime, cartoon, over-smooth skin, airbrushed, beauty filter, glossy skin, fake",
+        "clip": [
+          1,
+          "CLIP"
+        ]
+      },
+      "pos": [
+        80,
+        420
+      ]
+    },
+    {
+      "id": 4,
+      "type": "EmptyLatentImage",
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 1024,
+        "height": 1536,
+        "batch_size": 1
+      },
+      "pos": [
+        420,
+        80
+      ]
+    },
+    {
+      "id": 5,
+      "type": "CLIPVisionLoader",
+      "class_type": "CLIPVisionLoader",
+      "inputs": {
+        "clip_name": "Nobody_margaux.safetensors"
+      },
+      "pos": [
+        80,
+        580
+      ]
+    },
+    {
+      "id": 6,
+      "type": "IPAdapterModelLoader",
+      "class_type": "IPAdapterModelLoader",
+      "inputs": {
+        "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
+      },
+      "pos": [
+        80,
+        740
+      ]
+    },
+    {
+      "id": 7,
+      "type": "LoadImageFromUrl",
+      "class_type": "LoadImageFromUrl",
+      "inputs": {
+        "url": "https://example.com/ref1.jpg"
+      },
+      "pos": [
+        420,
+        580
+      ]
+    },
+    {
+      "id": 8,
+      "type": "IPAdapterApply",
+      "class_type": "IPAdapterApply",
+      "inputs": {
+        "ipadapter": [
+          6,
+          "IPADAPTER"
+        ],
+        "clip_vision": [
+          5,
+          "CLIP_VISION"
+        ],
+        "image": [
+          7,
+          "IMAGE"
+        ],
+        "strength": 0.6
+      },
+      "pos": [
+        420,
+        740
+      ]
+    },
+    {
+      "id": 9,
+      "type": "ConditioningConcat",
+      "class_type": "ConditioningConcat",
+      "inputs": {
+        "conditioning_to": [
+          2,
+          "CONDITIONING"
+        ],
+        "conditioning_from": [
+          8,
+          "CONDITIONING"
+        ]
+      },
+      "pos": [
+        420,
+        420
+      ]
+    },
+    {
+      "id": 10,
+      "type": "KSampler",
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          1,
+          "MODEL"
+        ],
+        "seed": 123456789,
+        "steps": 36,
+        "cfg": 2.7,
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "positive": [
+          9,
+          "CONDITIONING"
+        ],
+        "negative": [
+          3,
+          "CONDITIONING"
+        ],
+        "latent_image": [
+          4,
+          "LATENT"
+        ],
+        "denoise": 1.0
+      },
+      "pos": [
+        420,
+        260
+      ]
+    },
+    {
+      "id": 11,
+      "type": "VAEDecode",
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          10,
+          "LATENT"
+        ],
+        "vae": [
+          1,
+          "VAE"
+        ]
+      },
+      "pos": [
+        700,
+        260
+      ]
+    },
+    {
+      "id": 12,
+      "type": "SaveImage",
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          11,
+          "IMAGE"
+        ]
+      },
+      "pos": [
+        920,
+        260
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      "CLIP",
+      2,
+      1,
+      "clip"
+    ],
+    [
+      2,
+      1,
+      "CONDITIONING",
+      9,
+      1,
+      "conditioning_to"
+    ],
+    [
+      1,
+      1,
+      "CLIP",
+      3,
+      1,
+      "clip"
+    ],
+    [
+      8,
+      1,
+      "CONDITIONING",
+      9,
+      2,
+      "conditioning_from"
+    ],
+    [
+      4,
+      1,
+      "LATENT",
+      10,
+      9,
+      "latent_image"
+    ],
+    [
+      1,
+      1,
+      "MODEL",
+      10,
+      1,
+      "model"
+    ],
+    [
+      9,
+      1,
+      "CONDITIONING",
+      10,
+      5,
+      "positive"
+    ],
+    [
+      3,
+      1,
+      "CONDITIONING",
+      10,
+      6,
+      "negative"
+    ],
+    [
+      10,
+      1,
+      "LATENT",
+      11,
+      1,
+      "samples"
+    ],
+    [
+      1,
+      1,
+      "VAE",
+      11,
+      2,
+      "vae"
+    ],
+    [
+      11,
+      1,
+      "IMAGE",
+      12,
+      1,
+      "images"
+    ]
+  ],
+  "prompt": {}
+}

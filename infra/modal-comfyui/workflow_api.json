@@ -1,0 +1,151 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "juggernautXL_ragnarokBy.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": "RAW amateur iPhone photo taken in bedroom, grainy flash, bad indoor lighting, messy sheets background, extreme close-up of smooth shaved wet pussy spread wide open, legs apart, glistening aroused vulva, detailed pink labia minora and majora visible, swollen clitoris exposed and throbbing, natural dripping fluids shiny on skin, realistic skin texture pores sweat imperfections, aroused female body, no clothes no panties, photorealistic, candid snapshot, 8k raw, no filter, explicit NSFW, high detail anatomy, NSFW raw candid, photorealistic, natural lighting, detailed skin texture, high quality, professional photography, 8k uhd, realistic",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "bad anatomy, deformed, child, underage, male, text, watermark, extra fingers, low quality, plastic skin, doll-like, porcelain, wax, CGI, 3d render, anime, cartoon, over-smooth skin, airbrushed, beauty filter, glossy skin, fake",
+      "clip": [
+        "8",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "width": 1024,
+      "height": 1536,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "5": {
+    "inputs": {
+      "seed": 395716101872117,
+      "steps": 36,
+      "cfg": 2.7,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": [
+        "8",
+        0
+      ],
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "7": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "8": {
+    "inputs": {
+      "lora_name": "Nobody_margaux.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "1",
+        0
+      ],
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "9": {
+    "inputs": {
+      "image": "ref.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Ref Image"
+    }
+  },
+  "10": {
+    "inputs": {
+      "pixels": [
+        "9",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode (Ref)"
+    }
+  }
+}

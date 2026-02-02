@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+enum Role {
+  user
+  admin
+  superadmin
+}
+
+enum UserStatus {
+  lead
+  active
+  blocked
+}
+
+enum ResponseMode {
+  text
+  audio
+  both
+  mirror
+}
+
+enum Direction {
+  in
+  out
+}
+
+enum MessageType {
+  text
+  audio
+  image
+}
+
+enum MessageStatus {
+  queued
+  sent
+  delivered
+  read
+  failed
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+  expired
+  trial
+}
+
+model User {
+  id              String          @id @default(cuid())
+  phone           String          @unique
+  email           String?         @unique
+  name            String?
+  passwordHash    String?
+  role            Role
+  status          UserStatus
+  trialUsedCount  Int             @default(0)
+  trialLimit      Int             @default(10)
+  termsAccepted   Boolean         @default(false)
+  termsAcceptedAt DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  personas        Persona[]
+  conversations   Conversation[]
+  messages        Message[]
+  onboardingMessages OnboardingMessage[]
+  subscriptions   Subscription[]
+
+  @@index([status], map: "idx_users_status")
+}
+
+model Persona {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  personality  String
+  avatar       String?
+  responseMode ResponseMode
+  voicePreset  String?
+  voiceSampleUrl String?
+  voicePitch   Int
+  voiceSpeed   Int
+  prompt       String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  conversations Conversation[]
+  messages      Message[]
+  onboardingMessages OnboardingMessage[]
+
+  @@index([userId], map: "idx_personas_user_id")
+}
+
+model Conversation {
+  id         String    @id @default(cuid())
+  userId     String
+  personaId  String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  persona    Persona   @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  xaiLastResponseId String?
+  xaiLastResponseAt DateTime?
+  xaiConvCacheId String?
+
+  messages   Message[]
+  onboardingMessages OnboardingMessage[]
+
+  @@index([userId], map: "idx_conversations_user_id")
+  @@index([personaId], map: "idx_conversations_persona_id")
+}
+
+model Message {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personaId      String
+  persona        Persona        @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  direction      Direction
+  type           MessageType
+  content        String
+  status         MessageStatus
+  metadata       Json?
+  createdAt      DateTime       @default(now())
+
+  @@index([conversationId], map: "idx_messages_conversation_id")
+  @@index([userId], map: "idx_messages_user_id")
+  @@index([createdAt], map: "idx_messages_created_at")
+}
+
+model OnboardingMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personaId      String
+  persona        Persona      @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  step           String?
+  direction      Direction
+  type           MessageType
+  content        String
+  status         MessageStatus
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId], map: "idx_onboarding_conversation_id")
+  @@index([userId], map: "idx_onboarding_user_id")
+  @@index([createdAt], map: "idx_onboarding_created_at")
+}
+
+model Plan {
+  id               String         @id @default(cuid())
+  name             String         @unique
+  price            Decimal        @db.Decimal(10, 2)
+  currency         String         @default("BRL")
+  messagesPerCycle Int
+  imagesPerCycle   Int            @default(0)
+  personasAllowed  Int
+  audioEnabled     Boolean        @default(false)
+  active           Boolean        @default(true)
+
+  subscriptions    Subscription[]
+}
+
+model Subscription {
+  id                  String              @id @default(cuid())
+  userId              String
+  planId              String
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                Plan                @relation(fields: [planId], references: [id])
+  status              SubscriptionStatus
+  currentPeriodStart  DateTime
+  currentPeriodEnd    DateTime
+  imagesUsedCount     Int                 @default(0)
+  extraImagesCount    Int                 @default(0)
+  createdAt           DateTime            @default(now())
+
+  @@index([userId], map: "idx_subscriptions_user_id")
+  @@index([status], map: "idx_subscriptions_status")
+}
+
+model WhatsappConfig {
+  id            String   @id @default(cuid())
+  phoneNumberId String
+  wabaId        String
+  verifyToken   String
+  displayNumber String?
+  webhookUrl    String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([phoneNumberId])
+}
+
+model GrokConfig {
+  id        String   @id @default(cuid())
+  model     String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentHistory {
+  id            String   @id @default(cuid())
+  paymentId     String   @unique
+  status        String
+  type          String
+  amount        Decimal  @db.Decimal(10, 2)
+  processedAt   DateTime @default(now())
+  metadata      Json?
+
+  @@index([paymentId], map: "idx_payment_history_payment_id")
+}
