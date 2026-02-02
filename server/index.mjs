@@ -37,6 +37,21 @@ app.use(createPagamentosRouter({ prisma, createPixPayment, processMercadoPagoWeb
 app.use(createWhatsAppRouter({ prisma }))
 app.use(createConversasRouter({ prisma }))
 
+// Servir arquivos estáticos do React (pasta dist na raiz do projeto)
+// Assumindo que o server roda em /server/index.mjs e o build está em /dist
+const distPath = path.join(__dirname, '../dist')
+app.use(express.static(distPath))
+
+// Rota catch-all para SPA (React)
+// Qualquer requisição que não seja API será redirecionada para o index.html
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api')) {
+    // Se for api e não encontrou rota, retorna 404 JSON
+    return res.status(404).json({ error: 'Endpoint não encontrado' })
+  }
+  res.sendFile(path.join(distPath, 'index.html'))
+})
+
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`[CrushZap API] Servindo em http://localhost:${PORT}`)
