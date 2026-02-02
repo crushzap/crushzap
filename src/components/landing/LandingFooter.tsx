@@ -28,9 +28,9 @@ export function LandingFooter() {
               <a href="#pricing" className="hover:text-foreground transition-colors">
                 Planos
               </a>
-              <Link to="/dashboard" className="hover:text-foreground transition-colors">
+              <a href="https://wa.me/5511968988140?text=Oi,%20Crush.%20Quer%20namorar%20comigo?" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
                 Acessar
-              </Link>
+              </a>
             </nav>
           </div>
 

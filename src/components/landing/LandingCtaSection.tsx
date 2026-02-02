@@ -18,12 +18,12 @@ export function LandingCtaSection() {
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
             Junte-se a milhares de pessoas que já encontraram companhia e diversão com nossa plataforma.
           </p>
-          <Link to="/dashboard">
+          <a href="https://wa.me/5511968988140?text=Oi,%20Crush.%20Quer%20namorar%20comigo?" target="_blank" rel="noopener noreferrer">
             <Button size="lg" className="gradient-primary shadow-glow text-lg px-10 h-14 gap-2">
               Começar Agora – É Grátis
               <ArrowRight className="h-5 w-5" />
             </Button>
-          </Link>
+          </a>
         </motion.div>
       </div>
     </section>

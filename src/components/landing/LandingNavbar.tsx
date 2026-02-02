@@ -21,9 +21,6 @@ export function LandingNavbar() {
           </a>
         </div>
         <div className="flex items-center gap-3">
-          <Link to="/dashboard">
-            <Button variant="ghost">Entrar</Button>
-          </Link>
           <a href="https://wa.me/5511968988140?text=Oi,%20Crush.%20Quer%20namorar%20comigo?" target="_blank" rel="noopener noreferrer">
             <Button className="gradient-primary shadow-glow">Começar Grátis</Button>
           </a>
