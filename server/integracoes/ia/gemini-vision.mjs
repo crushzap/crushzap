@@ -78,8 +78,8 @@ export async function descreverImagemGemini({ buffer, mimeType, prompt, timeoutM
 
     const response = await gerar({ textPrompt: finalPrompt, maxOutputTokens: baseMaxOutputTokens })
 
-    // Log para debug
-    console.log('[Gemini Vision] Response:', JSON.stringify(response, null, 2))
+    const debug = (process.env.DEBUG_GEMINI_VISION || '').toString().trim().toLowerCase() === 'true'
+    if (debug) console.log('[Gemini Vision] Response:', JSON.stringify(response, null, 2))
 
     let text = extrairTexto(response)
     const finishReason = response?.candidates?.[0]?.finishReason
@@ -94,7 +94,7 @@ export async function descreverImagemGemini({ buffer, mimeType, prompt, timeoutM
       ].join('\n')
 
       const retryResponse = await gerar({ textPrompt: retryPrompt, maxOutputTokens: retryMax })
-      console.log('[Gemini Vision][retry] Response:', JSON.stringify(retryResponse, null, 2))
+      if (debug) console.log('[Gemini Vision][retry] Response:', JSON.stringify(retryResponse, null, 2))
       const retryText = extrairTexto(retryResponse)
       if (retryText) text = retryText
     }

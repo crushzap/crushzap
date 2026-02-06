@@ -64,7 +64,8 @@ export async function handle(ctx) {
 
       try {
         if (shouldSendFoto) {
-          const foto = await gerarAvatarFromConsistencyPack({ prisma, personaId: persona.id, type: 'selfie_mirror_01' })
+          console.log('[DEBUG] askTermsFinal: requesting selfie_mirror_outfit_01')
+          const foto = await gerarAvatarFromConsistencyPack({ prisma, personaId: persona.id, type: 'selfie_mirror_outfit_01' })
           if (foto.ok && foto.publicUrl) {
             try {
               console.log('[Persona Foto] send_whatsapp', { personaId: persona.id, provider: 'modal', source: 'pack_avatar', url: foto.publicUrl })

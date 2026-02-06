@@ -35,6 +35,21 @@ export function createWhatsAppRouter({ prisma }) {
       || /(voice note|nota de voz)/.test(t)
   }
 
+  function shouldDisableBufferForPhotoRequest(inputText) {
+    const t = (inputText || '').toString().toLowerCase()
+    const hasVerb = /\b(manda|envia|me manda|me envia|manda uma|manda um|quero|pode|consegue|gera|cria)\b/.test(t)
+    const hasNoun = /\b(foto|imagem|selfie|nude|nudes|pack|photo|picture|pic)\b/.test(t)
+    if (hasVerb && hasNoun) return true
+    return /\b(send_photo)\b/.test(t)
+  }
+
+  function normalizarTipoMensagem(type) {
+    const t = (type || 'text').toString().trim().toLowerCase()
+    if (t === 'audio' || t === 'voice') return 'audio'
+    if (t === 'image') return 'image'
+    return 'text'
+  }
+
   function shouldProcessInboundId(messageId) {
     const id = (messageId || '').toString().trim()
     if (!id) return true
@@ -217,7 +232,10 @@ export function createWhatsAppRouter({ prisma }) {
         ...ctxBase,
         text: contextText,
         typed: (contextText || '').toString().replace(/[!?.]/g, '').trim().toLowerCase(),
-        msgType: dbType || ctxBase.msgType,
+        msgType: normalizarTipoMensagem(dbType || ctxBase.msgType),
+        mediaType: dbType,
+        mediaContent: dbContent,
+        mediaMetadata: dbMetadata,
         personaReady,
         sendWhatsAppText,
         sendWhatsAppButtons,
@@ -274,6 +292,9 @@ export function createWhatsAppRouter({ prisma }) {
       // Se não for comando/onboarding e for texto, agrupa.
       let shouldBuffer = !shouldStoreOnboarding && isText
       if (shouldBuffer && shouldDisableBufferForAudioRequest(ctxBase.text)) {
+        shouldBuffer = false
+      }
+      if (shouldBuffer && shouldDisableBufferForPhotoRequest(ctxBase.text)) {
         shouldBuffer = false
       }
 

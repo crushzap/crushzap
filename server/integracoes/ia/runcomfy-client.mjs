@@ -18,6 +18,12 @@ export async function gerarImagemRunComfy({ prompt, negativePrompt, aspectRatio 
   const workflowId = readEnvStr('RUNCOMFY_WORKFLOW_ID', '')
   const timeoutMs = readEnvInt('RUNCOMFY_TIMEOUT_MS', 60000)
   if (!base) return { ok: false, error: 'RUNCOMFY_API_BASE não configurado' }
+  let baseUrl = base
+  try {
+    baseUrl = new URL(base).toString()
+  } catch {
+    return { ok: false, error: 'RUNCOMFY_API_BASE inválido (use URL absoluta com http/https)' }
+  }
 
   const stepsEnv = readEnvInt('COMFYUI_STEPS', 32)
   const cfgEnv = readEnvInt('COMFYUI_CFG', 3)
@@ -43,7 +49,7 @@ export async function gerarImagemRunComfy({ prompt, negativePrompt, aspectRatio 
   const controller = new AbortController()
   const to = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(base, {
+    const res = await fetch(baseUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -63,9 +69,14 @@ export async function gerarImagemRunComfy({ prompt, negativePrompt, aspectRatio 
       const url = typeof first === 'string' ? first : (first?.url || '')
       if (url) return { ok: true, url, provider: 'runcomfy' }
     }
-    const statusUrl = String(data?.status_url || '')
+    let statusUrl = String(data?.status_url || '')
     if (!statusUrl) {
       return { ok: false, error: 'RunComfy sem status_url' }
+    }
+    try {
+      statusUrl = new URL(statusUrl, baseUrl).toString()
+    } catch {
+      return { ok: false, error: 'RunComfy retornou status_url inválido' }
     }
     const started = Date.now()
     while (Date.now() - started < timeoutMs) {

@@ -93,10 +93,21 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
   if (isNegated(userLower, ['de quatro', 'cachorrinho', 'doggystyle', 'on all fours', 'empinada'])) negatedTypes.add('doggystyle')
 
   const wantsCinematic = /\b(cinematic|cinema|filme|filmic|fotoreal|foto real|fotorealista|photo realistic|photorealistic)\b/i.test(combinedLower)
+  const wantsWet =
+    !isNegated(userLower, ['molhada', 'molhadinha', 'úmida', 'umida', 'lubrificada', 'wet']) &&
+    /\b(molhadinha|molhada|molhado|úmida|umida|lubrificad[ao]|wet)\b/i.test(combinedLower)
+
+  const wantsMetalstocks =
+    !isNegated(userLower, ['algema', 'algemada', 'handcuff', 'handcuffed', 'handcuffs', 'cuffs', 'shackles', 'manacles', 'metalstocks', 'stocks']) &&
+    /\b(algema|algemada|algemado|metal\s+handcuffs?|handcuffs?|handcuffed|cuffs?|wrist\s+cuffs?|shackles?|manacles?|metalstocks|stocks?)\b/i.test(combinedLower)
+
+  const wantsShibari =
+    !isNegated(userLower, ['shibari', 'corda', 'cordas', 'rope', 'ropes', 'bondage', 'amarrada', 'suspended']) &&
+    /\b(shibari|rope\s+bondage|bondage|cordas?|amarrad[ao]|suspended|suspension)\b/i.test(combinedLower)
 
   const wantsDoggystyle =
     !negatedTypes.has('doggystyle') &&
-    (hasAny(userLower, ['de quatro', 'cachorrinho', 'empinada', 'doggystyle', 'on all fours']) || hasAny(tagLower, ['doggystyle', 'on all fours']))
+    (hasAny(userLower, ['de quatro', 'de 4', '4', 'cachorrinho', 'empinada', 'doggystyle', 'on all fours']) || hasAny(tagLower, ['doggystyle', 'on all fours']))
 
   const wantsHairy = /\b(peluda|peludinha|cabeluda|hairy|bushy|pubic hair|mato)\b/i.test(combinedLower)
   const wantsPussyOpen =
@@ -122,6 +133,22 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
 
   const fixedPrompts = [
     {
+      type: 'metalstocks',
+      triggers: ['algema', 'algemada', 'metal handcuffs', 'handcuff', 'handcuffed', 'handcuffs', 'cuffs', 'wrist cuffs', 'shackles', 'manacles', 'metalstocks', 'stocks'],
+      prompt:
+        'metalstocks, bondage, nude, wrists restrained behind back, metal handcuffs, full body, from behind, kneeling on bed, arched back, ass up, realistic proportions, bedroom, natural window light, no face',
+      negative:
+        "(face:1.5), (head:1.5), close-up, extreme close-up, macro lens, frame filled, anus, anal, pussy close-up, spreading pussy, spreading ass, fingering, inserted fingers, extra arms, extra hands, multiple hands, four hands, six fingers, 6 fingers, extra digit, bad hands, deformed hands, selfie, mirror selfie, phone, cellphone, holding phone, camera, mobile phone, male, text, watermark"
+    },
+    {
+      type: 'shibari',
+      triggers: ['shibari', 'rope bondage', 'bondage', 'corda', 'cordas', 'amarrada', 'suspended', 'suspension'],
+      prompt:
+        'shibari, rope bondage, nude, full body, ropes on torso and thighs, restrained wrists, suspended bondage or kneeling on bed, realistic proportions, studio or bedroom, no face',
+      negative:
+        "(face:1.5), (head:1.5), close-up, extreme close-up, macro lens, frame filled, anus, anal, pussy close-up, spreading pussy, spreading ass, fingering, inserted fingers, extra arms, extra hands, multiple hands, four hands, six fingers, 6 fingers, extra digit, bad hands, deformed hands, selfie, mirror selfie, phone, cellphone, holding phone, camera, mobile phone, male, text, watermark"
+    },
+    {
       type: 'anal',
       triggers: ['anal', 'cuzinho', 'cu', 'anus', 'anual', 'rosca', 'asshole', 'butthole', 'anus'],
       prompt: 'extreme close-up of anus, macro lens, frame filled with anal sphincter, two hands spreading butt cheeks apart, thumbs pressing skin, fingers pulling cheeks outwards, correct hand anatomy, rear view, headless, no face, no upper body, focus strictly on anus, cropped at waist, detailed skin, realistic texture',
@@ -141,9 +168,9 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
     },
     {
       type: 'doggystyle',
-      triggers: ['de quatro', 'cachorrinho', 'empinada', 'doggystyle', 'on all fours'],
+      triggers: ['de quatro', 'de 4', '4', 'cachorrinho', 'empinada', 'doggystyle', 'on all fours'],
       prompt: 'rear view, from behind, back view, fully nude, naked, on all fours (doggystyle), knees on bed, hands planted on bed, hands cropped out, hands out of frame, no fingers visible, ass up, arched back, headless, no face, no upper body, focus on butt and pussy from behind, cropped at waist, realistic proportions, bedroom, natural window light, camera behind subject',
-      negative: "(face:1.5), (head:1.5), (upper body:1.5), standing, upright, front view, facing camera, looking at camera, selfie, mirror selfie, portrait, frontal, front-facing, twisted neck, broken neck, 180-degree head, head turned backwards, exorcist head, extra arms, extra hands, multiple hands, four hands, hands in frame, fingers visible, six fingers, 6 fingers, extra digit, extra limbs, bad anatomy, deformed anatomy, bad hands, deformed hands, extra fingers, fused fingers, missing fingers, poorly drawn hands, hands on genitals, spreading pussy, spreading ass, fingering, inserted fingers, explicit hand pose, misplaced nipples, nipples on butt, nipples on ass, male, text, watermark, phone, cellphone, holding phone, camera, mobile phone, holding device"
+      negative: "(face:1.5), (head:1.5), (upper body:1.5), standing, upright, front view, facing camera, looking at camera, looking back, looking over shoulder, selfie, mirror selfie, portrait, frontal, front-facing, twisted neck, broken neck, 180-degree head, head turned backwards, exorcist head, extra arms, extra hands, multiple hands, four hands, hands in frame, fingers visible, six fingers, 6 fingers, extra digit, extra limbs, bad anatomy, deformed anatomy, bad hands, deformed hands, extra fingers, fused fingers, missing fingers, poorly drawn hands, hands on genitals, spreading pussy, spreading ass, fingering, inserted fingers, explicit hand pose, misplaced nipples, nipples on butt, nipples on ass, creampie, semen, cum, male, text, watermark, phone, cellphone, holding phone, camera, mobile phone, holding device"
     },
     {
       type: 'breasts',
@@ -242,8 +269,16 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
     specificNegative = preset.negative
   }
 
+  if (wantsDoggystyle) {
+    applyPoseTemplate('doggystyle')
+  }
+  if (!poseType && wantsMetalstocks) {
+    applyPoseTemplate('metalstocks')
+  }
+  if (!poseType && wantsShibari) {
+    applyPoseTemplate('shibari')
+  }
 
-  
   const fixedMatch = fixedPrompts.find((fp) => {
       if (negatedTypes.has(fp.type)) return false
       // Usa regex boundary para triggers curtos também no fixedMatch
@@ -255,9 +290,9 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
          return combinedLower.includes(t)
       })
   })
-  if (fixedMatch) {
+  if (!poseType && fixedMatch) {
     applyPoseTemplate(fixedMatch.type)
-  } else {
+  } else if (!poseType) {
       const keywords = [
         { pt: ['pelada', 'nua', 'despida', 'sem roupa', 'nuazinha'], en: 'fully nude, naked, no clothes' },
         { pt: ['molhada', 'escorrendo', 'suco', 'mel', 'umida', 'lubrificada', 'pingando'], en: 'wet, dripping, lubricated' },
@@ -310,7 +345,7 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
       }
     }
 
-  if (!disableActionOverrides) {
+  if (!disableActionOverrides && poseType !== 'doggystyle') {
     if (wantsRideToy && !negatedTypes.has('pussy') && !negatedTypes.has('anal')) {
       applyPoseTemplate('ride_toy')
     } else if (wantsToyAnal && !negatedTypes.has('anal')) {
@@ -324,6 +359,10 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
     } else if (wantsPussyOpen && !negatedTypes.has('pussy') && !wantsAnal && !(poseType || '').toLowerCase().startsWith('pussy_')) {
       applyPoseTemplate('pussy_open')
     }
+  }
+
+  if (poseType === 'doggystyle' && wantsWet) {
+    cleanPrompt = `${cleanPrompt}, subtle wet sheen, damp inner thighs`
   }
 
   // Prevenção de conflito de pose: Se o prompt do LLM é muito detalhado e não casou com nenhum template fixo,
@@ -424,10 +463,11 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
   const finalPrompt = `${promptParts.join(', ')}. ${style}`.replace(/\s{2,}/g, ' ').trim()
 
   const defaultNegative =
-    "underwear, panties, bra, bikini, clothes, censored, blur, watermark, text, child, underage, male, deformed, " +
+    "underwear, panties, bra, bikini, clothes, censored, censor bar, mosaic, grey bar, gray bar, blur, watermark, text, child, underage, male, deformed, " +
     "multiple people, two women, 2girls, group, extra breasts, extra nipples, duplicate body, duplicate torso, extra limbs, " +
     "misplaced nipples, nipples on butt, nipples on ass, nipples on thighs, bad anatomy, mutated, disfigured, malformed, " +
     "twisted neck, broken neck, 180-degree head, head turned backwards, exorcist head, unnatural spine, " +
+    "bad eyes, deformed eyes, cross-eyed, lazy eye, wonky eyes, asymmetrical eyes, mismatched pupils, extra eyes, " +
     "extra arms, extra hands, multiple hands, four hands, six fingers, 6 fingers, extra digit, bad hands, deformed hands, distorted hands, malformed hands, extra fingers, fused fingers, missing fingers, long fingers, poorly drawn hands, " +
     "plastic skin, waxy skin, rubber skin, doll-like, porcelain, CGI, 3d render, anime, cartoon, unrealistic, uncanny valley, " +
     "over-smooth skin, airbrushed, beauty filter, over-processed, over-sharpened, glossy skin, fake"

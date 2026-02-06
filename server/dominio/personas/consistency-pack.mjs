@@ -87,21 +87,31 @@ function outfitPtToEn(outfitPt) {
   if (!raw) return ''
   const low = raw.toLowerCase()
   const map = [
-    ['vestido', 'dress'],
-    ['camiseta', 't-shirt'],
-    ['blusa', 'blouse'],
-    ['calça', 'pants'],
-    ['short', 'shorts'],
-    ['saia', 'skirt'],
-    ['jeans', 'jeans'],
-    ['biquíni', 'bikini'],
-    ['bikini', 'bikini'],
-    ['lingerie', 'lingerie'],
-    ['calcinha', 'panties'],
-    ['sutiã', 'bra'],
-    ['salto', 'high heels'],
-    ['tênis', 'sneakers'],
-    ['tenis', 'sneakers'],
+    ['vestido justo', 'tight fitting dress, elegant cocktail dress, fully clothed covering chest and body'],
+    ['vestido longo', 'long flowing dress, elegant evening gown, fully clothed covering chest and body'],
+    ['vestido', 'dress, fully clothed'],
+    ['roupa de tênis', 'tennis outfit, polo shirt and tennis skirt, fully clothed'],
+    ['roupa de tenis', 'tennis outfit, polo shirt and tennis skirt, fully clothed'],
+    ['maiô', 'one-piece swimsuit, beachwear'],
+    ['maio', 'one-piece swimsuit, beachwear'],
+    ['policial', 'police uniform costume, cop outfit, shirt and pants, fully clothed'],
+    ['secretária', 'secretary outfit, blouse and pencil skirt, glasses, fully clothed'],
+    ['secretaria', 'secretary outfit, blouse and pencil skirt, glasses, fully clothed'],
+    ['couro', 'leather jacket and leather pants, edgy outfit, fully clothed'],
+    ['camiseta', 't-shirt, fully clothed'],
+    ['blusa', 'blouse, fully clothed'],
+    ['calça', 'pants, fully clothed'],
+    ['short', 'shorts and t-shirt, casual outfit, fully clothed'],
+    ['saia', 'skirt and blouse, feminine outfit, fully clothed'],
+    ['jeans', 'blue jeans, casual t-shirt, fully clothed'],
+    ['biquíni', 'bikini, swimwear'],
+    ['bikini', 'bikini, swimwear'],
+    ['lingerie', 'lingerie set, underwear'],
+    ['calcinha', 'panties and bra'],
+    ['sutiã', 'bra and panties'],
+    ['salto', 'high heels, elegant outfit'],
+    ['tênis', 'sneakers, casual outfit'],
+    ['tenis', 'sneakers, casual outfit'],
   ]
   for (const [pt, en] of map) {
     if (low.includes(pt)) return en
@@ -262,6 +272,10 @@ function buildNegativePrompt({ bodyTypeEn, traitsEn, type }) {
   const closeUpTypes = ['breasts_', 'body_lower', 'face_', 'anal', 'pussy', 'butt', 'oral']
   if (type && closeUpTypes.some(t => type.startsWith(t))) {
      extra.unshift('holding phone', 'phone in hand', 'phone on chest', 'phone on body', 'holding object', 'bad anatomy', 'deformed body', 'extra arms', 'extra hands', 'mutated', 'distorted', 'double body', 'duplicate body', 'extra limbs', 'malformed')
+  }
+
+  if (type && type.includes('outfit')) {
+     extra.push('nude', 'naked', 'topless', 'nipples', 'areolas', 'pussy', 'sex', 'nsfw')
   }
 
   if (type && type.startsWith('face_')) {
@@ -542,7 +556,9 @@ export async function gerarAvatarFromConsistencyPack({ prisma, personaId, type =
   if (!persona) return { ok: false, error: 'Persona não encontrada' }
 
   const { traitsEn, bodyTypeEn, breastSizeEn } = buildTraitsEn(persona.prompt)
-  const prompt = buildPromptByType({ type, traitsEn, bodyTypeEn, breastSizeEn, withRef: false })
+  const outfitEn = outfitPtToEn(extractOutfitPt(persona.prompt))
+  console.log('[Consistency Pack] Avatar Gen - Outfit extracted:', outfitEn, 'Prompt:', persona.prompt)
+  const prompt = buildPromptByType({ type, traitsEn, bodyTypeEn, breastSizeEn, withRef: false, outfitEn })
   const negativePrompt = buildNegativePrompt({ bodyTypeEn, traitsEn, type })
 
   const providerPref = readEnvStr('CONSISTENCY_PACK_PROVIDER', 'modal').toString().trim().toLowerCase()

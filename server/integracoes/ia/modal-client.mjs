@@ -8,7 +8,46 @@ function readEnvInt(name, def) {
   return Number.isFinite(v) ? v : def
 }
 
-export async function gerarImagemModal({ prompt, negativePrompt, aspectRatio = '2:3', steps = 32, cfg = 3, seed, refs = [], poseType, denoise, workflow, useRefAsInit, ipadapterWeight, refImageBase64 }) {
+async function toBase64(input) {
+  if (!input) return undefined
+  if (typeof input !== 'string') return undefined
+  const normalized = input.replace(/\\/g, '/')
+  
+  // Se for path local
+  if (normalized.startsWith('/') || normalized.match(/^[a-z]:\//i) || normalized.startsWith('assets/')) {
+    try {
+      const fs = await import('fs/promises')
+      const buf = await fs.readFile(normalized)
+      return buf.toString('base64')
+    } catch (e) {
+      console.error('[ModalClient] Erro lendo arquivo local:', input, e)
+      return undefined
+    }
+  }
+  // Se for URL
+  if (normalized.startsWith('http')) {
+     try {
+       const r = await fetch(normalized)
+       if (!r.ok) return undefined
+       const ab = await r.arrayBuffer()
+       return Buffer.from(ab).toString('base64')
+     } catch (e) {
+       console.error('[ModalClient] Erro baixando URL:', input, e)
+       return undefined
+     }
+  }
+  // Se ja parecer base64 (sem headers de data uri)
+  if (input.length > 100 && !input.includes('\n')) {
+      return input
+  }
+  return undefined
+}
+
+export async function gerarImagemModal({ 
+    prompt, negativePrompt, aspectRatio = '2:3', steps = 32, cfg = 3, seed, 
+    refs = [], poseType, denoise, workflow, useRefAsInit, ipadapterWeight, refImageBase64,
+    poseImage, maskImage, baseImage, extraLora, controlStrength
+}) {
   const apiUrl = readEnvStr('MODAL_COMFY_API_URL', '')
   const timeoutMs = readEnvInt('MODAL_COMFY_TIMEOUT_MS', 180000)
   const apiKey = readEnvStr('MODAL_COMFY_API_KEY', '')
@@ -57,6 +96,10 @@ export async function gerarImagemModal({ prompt, negativePrompt, aspectRatio = '
         refsBase64.push(refImageBase64)
     }
 
+    const poseB64 = await toBase64(poseImage)
+    const maskB64 = await toBase64(maskImage)
+    const baseB64 = await toBase64(baseImage)
+
     const payload = {
     prompt: String(prompt || ''),
     negative_prompt: String(negativePrompt || ''),
@@ -83,9 +126,14 @@ export async function gerarImagemModal({ prompt, negativePrompt, aspectRatio = '
     ...(Number.isFinite(Number(denoise)) ? { denoise: Number(denoise) } : {}),
     ...(typeof useRefAsInit === 'boolean' ? { use_ref_as_init: useRefAsInit } : {}),
     ...(Number.isFinite(Number(ipadapterWeight)) ? { ipadapter_weight: Number(ipadapterWeight) } : {}),
+    ...(Number.isFinite(Number(controlStrength)) ? { control_strength: Number(controlStrength) } : {}),
     
     // Se o backend suportar ref_image_base64 unico:
     ...(typeof refImageBase64 === 'string' && refImageBase64.trim() ? { ref_image_base64: refImageBase64.trim() } : {}),
+    ...(poseB64 ? { pose_image_base64: poseB64 } : {}),
+    ...(maskB64 ? { mask_base64: maskB64 } : {}),
+    ...(baseB64 ? { base_image_base64: baseB64 } : {}),
+    ...(extraLora ? { extra_lora: extraLora } : {}),
     
     // Se eu baixei e converti, posso tentar enviar como 'ref_images' (lista) se o backend Python iterar sobre isso.
     // Mas sem ver o código Python, a aposta mais segura para corrigir o erro "Bad Request for url" 
@@ -130,6 +178,9 @@ export async function gerarImagemModal({ prompt, negativePrompt, aspectRatio = '
 
     return { ok: false, error: 'Modal retornou resposta sem imagem' }
   } catch (e) {
+    if (e?.name === 'AbortError') {
+      return { ok: false, error: `Timeout Modal após ${timeoutMs}ms` }
+    }
     return { ok: false, error: (e?.message || 'Falha Modal').toString() }
   } finally {
     clearTimeout(to)

@@ -14,6 +14,8 @@ import { audioModal } from '../../integracoes/ia/audio-modal.mjs'
 import { audioQwen3Modal } from '../../integracoes/ia/audio-qwen3-modal.mjs'
 import { uploadAudio } from '../../integracoes/supabase/storage-audio.mjs'
 import { voiceManager } from '../../servicos/voice-manager.mjs'
+import { join } from 'node:path'
+import { descreverImagemGrok } from '../../integracoes/ia/grok-vision.mjs'
 
 const WHATSAPP_FALLBACK_BLOQUEIO_CONTEUDO = (process.env.WHATSAPP_FALLBACK_BLOQUEIO_CONTEUDO || '')
   .toString()
@@ -42,6 +44,78 @@ function resolveTtsEngines() {
   push(TTS_ENGINE_FALLBACK)
   if (!list.length) list.push('qwen3', 'xtts')
   return list
+}
+
+function clampText(s, maxLen) {
+  const raw = (s || '').toString().trim()
+  if (!raw) return ''
+  const limit = Number.isFinite(Number(maxLen)) ? Number(maxLen) : 0
+  if (!limit || limit <= 0) return raw
+  return raw.length > limit ? raw.slice(0, Math.max(0, limit - 1)).trimEnd() : raw
+}
+
+function buildCaptionFallback({ personaName, poseType, closeUp }) {
+  const t = (poseType || '').toString().trim().toLowerCase()
+  const name = (personaName || '').toString().trim()
+  const prefix = name ? `${name}: ` : ''
+  if (closeUp) {
+    if (t.startsWith('pussy')) return `${prefix}bem de pertinho…`
+    if (t.startsWith('anal')) return `${prefix}bem de pertinho…`
+    if (t.startsWith('breasts')) return `${prefix}bem de pertinho…`
+    if (t.startsWith('butt')) return `${prefix}bem de pertinho…`
+    return `${prefix}bem de pertinho…`
+  }
+  if (t === 'doggystyle') return `${prefix}de quatro pra você.`
+  if (t === 'metalstocks') return `${prefix}algemada pra você.`
+  if (t === 'shibari') return `${prefix}amarrada pra você.`
+  if (t === 'standing') return `${prefix}do jeitinho que você pediu.`
+  if (t === 'lying') return `${prefix}do jeitinho que você pediu.`
+  return `${prefix}do jeitinho que você pediu.`
+}
+
+function isCloseUpFromPoseType(poseType) {
+  const t = (poseType || '').toString().trim().toLowerCase()
+  return t.startsWith('pussy') || t.startsWith('anal') || t.startsWith('breasts') || t.startsWith('butt')
+}
+
+async function buildCaptionFromImage({ buffer, mimeType, personaName, poseType, closeUp, hint }) {
+  const enabledRaw = (process.env.IMAGE_CAPTION_VISION || 'true').toString().trim().toLowerCase()
+  const enabled = enabledRaw !== 'false' && enabledRaw !== '0' && enabledRaw !== 'no'
+  if (!enabled || !buffer) return { ok: false }
+
+  const poseHint = (poseType || '').toString().trim().toLowerCase()
+  const poseLine =
+    poseHint === 'doggystyle'
+      ? 'Pose sugerida: de quatro (vista por trás), sem rosto.'
+      : poseHint === 'breasts'
+        ? 'Pose sugerida: close no tronco, sem rosto.'
+        : poseHint === 'butt'
+          ? 'Pose sugerida: close por trás, sem rosto.'
+          : poseHint
+            ? `Pose sugerida: ${poseHint}.`
+            : ''
+
+  const prompt = [
+    `Crie UMA legenda curta (até 120 caracteres) em primeira pessoa como "${(personaName || 'ela').toString().trim()}".`,
+    'A legenda deve combinar com o que está VISÍVEL na imagem.',
+    poseLine,
+    hint ? `Contexto do pedido (use só se combinar com a imagem): ${String(hint).slice(0, 220)}` : '',
+    'Não invente detalhes (ex.: fluídos, atos específicos, posições diferentes) se não estiverem claramente visíveis.',
+    'Se houver nudez/sexo, descreva de forma objetiva e com linguagem leve (sem termos explícitos).',
+    'Não mencione idade. Assuma que é adulto (18+).',
+    'Responda somente com a legenda, sem listas e sem aspas.',
+  ].join('\n')
+
+  const res = await descreverImagemGrok({
+    buffer,
+    mimeType: mimeType || 'image/png',
+    prompt,
+    timeoutMs: 20000,
+  })
+  if (!res?.ok || !res?.text) return { ok: false, error: res?.error }
+  const caption = clampText(res.text, 180)
+  if (!caption) return { ok: false }
+  return { ok: true, caption }
 }
 
 async function generateTtsAudio({ engines, chunks, xttsSamples, qwen3VoicePrompt, qwen3Samples }) {
@@ -751,7 +825,10 @@ export async function handleConversaAgente(ctx) {
                   pushBy(n => n.startsWith('breasts_'))
                   pushBy(n => n.startsWith('face_'))
                 } else if (typeKey === 'doggystyle') {
-                  // ...
+                  pushBy(n => n.startsWith('doggystyle_'))
+                  pushBy(n => n.startsWith('body_'))
+                  pushBy(n => n.startsWith('selfie_mirror_'))
+                  pushBy(n => n.startsWith('face_'))
                 } else if (isPussyFamily || typeKey === 'butt' || isAnalFamily) {
                   // Para poses intimas e close-up (pussy/anal/butt), priorizamos refs especificas.
                   // Se nao tiver, usamos body/selfie, mas LIMITAMOS a quantidade para não poluir o IPAdapter com pose errada.
@@ -784,8 +861,12 @@ export async function handleConversaAgente(ctx) {
                 // para evitar conflito de múltiplas poses diferentes.
                 // 1 ou 2 refs fortes são melhores que 6 refs misturadas.
                 const maxRefs = (isPussyFamily || isAnalFamily) ? 2 : 6
+                const outRefs = [...new Set(pick)].slice(0, maxRefs)
+                if (outRefs.length === 0 && names.length > 0) {
+                  outRefs.push(...names.slice(0, Math.min(2, names.length)).map(n => n.url))
+                }
                 return {
-                  refs: [...new Set(pick)].slice(0, maxRefs),
+                  refs: outRefs,
                   isActionPose,
                   hasPoseRefs
                 }
@@ -863,8 +944,16 @@ export async function handleConversaAgente(ctx) {
           
           // Gera seed aleatória para garantir que a imagem seja sempre nova
           const seed = Math.floor(Math.random() * 2147483647)
+          const wantsSceneBase =
+            (ctx?.mediaType === 'image' || ctx?.msgType === 'image')
+            && typeof ctx?.mediaContent === 'string'
+            && ctx.mediaContent.startsWith('/uploads/')
+            && /\b(igual|mesma|recria|copi(a|ar)|assim|basead[ao]|referencia|referência)\b/i.test(String(text || ''))
+          const baseImage = wantsSceneBase
+            ? join(process.cwd(), 'public', ctx.mediaContent.replace(/^\//, ''))
+            : undefined
           
-          gerarImagemNSFW({ prompt: finalPrompt, negativePrompt, refs, poseType, seed }).then(async (img) => {
+          gerarImagemNSFW({ prompt: finalPrompt, negativePrompt, refs, poseType, seed, ...(baseImage ? { baseImage } : {}) }).then(async (img) => {
             const bytesLen = img?.bytes ? (Buffer.isBuffer(img.bytes) ? img.bytes.length : (img.bytes?.byteLength || 0)) : 0
             console.log('[ConversaAgente] Resultado geração:', { ok: img?.ok, provider: img?.provider, url: img?.url, bytesLen })
             if (img.ok && (img.url || img.bytes)) {
@@ -885,6 +974,17 @@ export async function handleConversaAgente(ctx) {
                   }
 
                   if (buffer) {
+                    const closeUp = isCloseUpFromPoseType(poseType) || /\b(close-up|close up|macro lens|extreme close-up|extreme close up)\b/i.test(finalPrompt || '')
+                    let captionForImage = ''
+                    try {
+                      const cap = await buildCaptionFromImage({ buffer, mimeType: contentType || 'image/png', personaName: persona?.name, poseType, closeUp, hint: photoMatch?.[1] })
+                      if (cap?.ok && cap.caption) captionForImage = cap.caption
+                    } catch {}
+                    if (!captionForImage) {
+                      captionForImage = buildCaptionFallback({ personaName: persona?.name, poseType, closeUp })
+                    }
+                    captionText = captionForImage
+
                     const ext =
                       contentType.includes('png')
                         ? 'png'

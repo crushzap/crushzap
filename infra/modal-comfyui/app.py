@@ -4,11 +4,17 @@ import os
 import subprocess
 import time
 import uuid
+import io
 from pathlib import Path
 
 import modal
 
 app = modal.App("crushzap-comfyui")
+
+_PLACEHOLDER_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+uZQAAAAASUVORK5CYII="
+)
+APP_VERSION = "2026-02-03-inpaint-mask-fix5"
 
 
 def _read_env_str(name: str, default: str = "") -> str:
@@ -31,12 +37,13 @@ def _modal_secrets() -> list[modal.Secret]:
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("git")
+    .apt_install("git", "libgl1", "libglib2.0-0")
     .pip_install(
         "fastapi[standard]==0.115.4",
         "comfy-cli==1.5.3",
         "huggingface-hub==0.36.0",
         "requests==2.32.3",
+        "pillow==11.1.0",
     )
     .run_commands("comfy --skip-prompt install --fast-deps --nvidia --version 0.3.71")
     .run_commands(
@@ -44,6 +51,15 @@ image = (
         "rm -rf /root/comfy/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus || true",
         "cd /root/comfy/ComfyUI/custom_nodes && git clone --depth 1 https://github.com/cubiq/ComfyUI_IPAdapter_plus.git",
         "test -f /root/comfy/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus/requirements.txt && python -m pip install -r /root/comfy/ComfyUI/custom_nodes/ComfyUI_IPAdapter_plus/requirements.txt || true",
+        # ControlNet Aux (Preprocessors)
+        "rm -rf /root/comfy/ComfyUI/custom_nodes/comfyui_controlnet_aux || true",
+        "cd /root/comfy/ComfyUI/custom_nodes && git clone --depth 1 https://github.com/Fannovel16/comfyui_controlnet_aux.git",
+        "test -f /root/comfy/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt && python -m pip install -r /root/comfy/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt || true",
+        # Impact Pack (Detailers)
+        "rm -rf /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Pack || true",
+        "cd /root/comfy/ComfyUI/custom_nodes && git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git",
+        "test -f /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Pack/requirements.txt && python -m pip install -r /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Pack/requirements.txt || true",
+        "python -m pip install ultralytics",
     )
 )
 
@@ -59,10 +75,14 @@ def _download_default_model():
     lora_dir = "/root/comfy/ComfyUI/models/loras"
     clip_vision_dir = "/root/comfy/ComfyUI/models/clip_vision"
     ipadapter_dir = "/root/comfy/ComfyUI/models/ipadapter"
+    controlnet_dir = "/root/comfy/ComfyUI/models/controlnet"
+    bbox_dir = "/root/comfy/ComfyUI/models/ultralytics/bbox"
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(lora_dir, exist_ok=True)
     os.makedirs(clip_vision_dir, exist_ok=True)
     os.makedirs(ipadapter_dir, exist_ok=True)
+    os.makedirs(controlnet_dir, exist_ok=True)
+    os.makedirs(bbox_dir, exist_ok=True)
 
     def link_if_exists(src_path: str, dest_path: str) -> bool:
         if os.path.exists(src_path):
@@ -141,6 +161,10 @@ def _download_default_model():
 image = image.run_function(_download_default_model, volumes={"/cache": vol})
 image = image.add_local_file(Path(__file__).parent / "workflow_api.json", "/root/workflow_api.json")
 image = image.add_local_file(Path(__file__).parent / "workflow_pack_api.json", "/root/workflow_pack_api.json")
+image = image.add_local_file(Path(__file__).parent / "workflow_pose_api.json", "/root/workflow_pose_api.json")
+image = image.add_local_file(Path(__file__).parent / "workflow_skeleton_api.json", "/root/workflow_skeleton_api.json")
+image = image.add_local_file(Path(__file__).parent / "workflow_inpainting_api.json", "/root/workflow_inpainting_api.json")
+image = image.add_local_file(Path(__file__).parent / "workflow_inpainting_scene_api.json", "/root/workflow_inpainting_scene_api.json")
 
 def _extract_assets_from_workflow(workflow: dict) -> tuple[str, str, str, str]:
     ckpt_name = ""
@@ -151,6 +175,7 @@ def _extract_assets_from_workflow(workflow: dict) -> tuple[str, str, str, str]:
         if not isinstance(node, dict):
             continue
         class_type = str(node.get("class_type") or "")
+        class_type_lower = class_type.lower().strip()
         inputs = node.get("inputs")
         if not isinstance(inputs, dict):
             continue
@@ -168,24 +193,47 @@ def _extract_assets_from_workflow(workflow: dict) -> tuple[str, str, str, str]:
 def _ensure_assets_present():
     import os
     import shutil
+    import subprocess
+    from huggingface_hub import hf_hub_download
 
     cache_root = _read_env_str("MODEL_CACHE_DIR", "/cache")
     ckpt_dir = "/root/comfy/ComfyUI/models/checkpoints"
     lora_dir = "/root/comfy/ComfyUI/models/loras"
     clip_vision_dir = "/root/comfy/ComfyUI/models/clip_vision"
     ipadapter_dir = "/root/comfy/ComfyUI/models/ipadapter"
+    controlnet_dir = "/root/comfy/ComfyUI/models/controlnet"
+    bbox_dir = "/root/comfy/ComfyUI/models/ultralytics/bbox"
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(lora_dir, exist_ok=True)
+    os.makedirs(clip_vision_dir, exist_ok=True)
+    os.makedirs(ipadapter_dir, exist_ok=True)
+    os.makedirs(controlnet_dir, exist_ok=True)
+    os.makedirs(bbox_dir, exist_ok=True)
+
+    def link_if_exists(src_path: str, dest_path: str) -> bool:
+        if os.path.exists(src_path):
+            subprocess.run(f"ln -sf {src_path} {dest_path}", shell=True, check=True)
+            return True
+        return False
 
     wf_default = json.loads(Path("/root/workflow_api.json").read_text(encoding="utf-8"))
     wf_pack = json.loads(Path("/root/workflow_pack_api.json").read_text(encoding="utf-8"))
+    wf_pose = json.loads(Path("/root/workflow_pose_api.json").read_text(encoding="utf-8"))
+    wf_skel = json.loads(Path("/root/workflow_skeleton_api.json").read_text(encoding="utf-8"))
+    wf_inpaint = json.loads(Path("/root/workflow_inpainting_api.json").read_text(encoding="utf-8"))
+    wf_inpaint_scene = json.loads(Path("/root/workflow_inpainting_scene_api.json").read_text(encoding="utf-8"))
+
     ckpt_default, lora_default, clip_default, ip_default = _extract_assets_from_workflow(wf_default)
     ckpt_pack, lora_pack, clip_pack, ip_pack = _extract_assets_from_workflow(wf_pack)
+    ckpt_pose, lora_pose, clip_pose, ip_pose = _extract_assets_from_workflow(wf_pose)
+    ckpt_skel, lora_skel, clip_skel, ip_skel = _extract_assets_from_workflow(wf_skel)
+    ckpt_inpaint, lora_inpaint, clip_inpaint, ip_inpaint = _extract_assets_from_workflow(wf_inpaint)
+    ckpt_inpaint_scene, lora_inpaint_scene, clip_inpaint_scene, ip_inpaint_scene = _extract_assets_from_workflow(wf_inpaint_scene)
 
-    checkpoint_filename = _read_env_str("CHECKPOINT_FILENAME", ckpt_default or ckpt_pack)
-    lora_filename = _read_env_str("LORA_FILENAME", lora_default or lora_pack)
-    clip_vision_filename = _read_env_str("CLIP_VISION_FILENAME", clip_default or clip_pack)
-    ipadapter_filename = _read_env_str("IPADAPTER_FILENAME", ip_default or ip_pack)
+    checkpoint_filename = _read_env_str("CHECKPOINT_FILENAME", ckpt_default or ckpt_pack or ckpt_pose or ckpt_skel or ckpt_inpaint_scene or ckpt_inpaint)
+    lora_filename = _read_env_str("LORA_FILENAME", lora_default or lora_pack or lora_pose or lora_skel or lora_inpaint_scene or lora_inpaint)
+    clip_vision_filename = _read_env_str("CLIP_VISION_FILENAME", clip_default or clip_pack or clip_pose or clip_skel or clip_inpaint_scene or clip_inpaint)
+    ipadapter_filename = _read_env_str("IPADAPTER_FILENAME", ip_default or ip_pack or ip_pose or ip_skel or ip_inpaint_scene or ip_inpaint)
 
     if checkpoint_filename:
         src = f"{cache_root}/checkpoints/{checkpoint_filename}"
@@ -241,6 +289,88 @@ def _ensure_assets_present():
                 subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
         print("[Assets] ipadapter", {"default": ip_default, "pack": ip_pack, "env": _read_env_str("IPADAPTER_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
 
+    # ControlNet OpenPose
+    cn_filename = "OpenPoseXL2.safetensors"
+    cn_from_volume = f"{cache_root}/controlnet/{cn_filename}"
+    cn_dest = f"{controlnet_dir}/{cn_filename}"
+    if not link_if_exists(cn_from_volume, cn_dest):
+        try:
+            token = _read_env_str("HF_TOKEN", "")
+            model_path = hf_hub_download(
+                repo_id="thibaud/controlnet-openpose-sdxl-1.0",
+                filename=cn_filename,
+                cache_dir=cache_root,
+                token=token if token else None,
+            )
+            os.makedirs(f"{cache_root}/controlnet", exist_ok=True)
+            subprocess.run(f"cp -f {model_path} {cn_from_volume}", shell=True, check=True)
+            subprocess.run(f"ln -sf {cn_from_volume} {cn_dest}", shell=True, check=True)
+        except Exception as e:
+            print(f"[Assets] Erro ao baixar ControlNet {cn_filename}: {e}")
+
+    for cn_filename, cn_repo_id in [
+        ("diffusers_xl_canny_full.safetensors", "lllyasviel/sd_control_collection"),
+        ("diffusers_xl_depth_full.safetensors", "lllyasviel/sd_control_collection"),
+    ]:
+        cn_from_volume = f"{cache_root}/controlnet/{cn_filename}"
+        cn_dest = f"{controlnet_dir}/{cn_filename}"
+        if not link_if_exists(cn_from_volume, cn_dest):
+            try:
+                token = _read_env_str("HF_TOKEN", "")
+                model_path = hf_hub_download(
+                    repo_id=cn_repo_id,
+                    filename=cn_filename,
+                    cache_dir=cache_root,
+                    token=token if token else None,
+                )
+                os.makedirs(f"{cache_root}/controlnet", exist_ok=True)
+                subprocess.run(f"cp -f {model_path} {cn_from_volume}", shell=True, check=True)
+                subprocess.run(f"ln -sf {cn_from_volume} {cn_dest}", shell=True, check=True)
+            except Exception as e:
+                print(f"[Assets] Erro ao baixar ControlNet {cn_filename}: {e}")
+
+    # Impact Pack BBox (YOLO)
+    for bbox_name in ["face_yolo8n.pt", "hand_yolo8n.pt"]:
+        bbox_from = f"{cache_root}/bbox/{bbox_name}"
+        bbox_dest = f"{bbox_dir}/{bbox_name}"
+        if not link_if_exists(bbox_from, bbox_dest):
+            try:
+                token = _read_env_str("HF_TOKEN", "")
+                model_path = hf_hub_download(
+                    repo_id="Bingsu/adetailer",
+                    filename=bbox_name,
+                    cache_dir=cache_root,
+                    token=token if token else None,
+                )
+                os.makedirs(f"{cache_root}/bbox", exist_ok=True)
+                subprocess.run(f"cp -f {model_path} {bbox_from}", shell=True, check=True)
+                subprocess.run(f"ln -sf {bbox_from} {bbox_dest}", shell=True, check=True)
+            except Exception as e:
+                print(f"[Assets] Erro ao baixar BBox {bbox_name}: {e}")
+
+    # LoRA Metal Stocks (BDSM)
+    lora_bdsm = "metalstocks2-03.safetensors"
+    lora_bdsm_from = f"{cache_root}/loras/{lora_bdsm}"
+    lora_bdsm_dest = f"{lora_dir}/{lora_bdsm}"
+    if not link_if_exists(lora_bdsm_from, lora_bdsm_dest):
+        try:
+             lora_bdsm_repo_id = _read_env_str("METALSTOCKS_LORA_REPO_ID", "")
+             lora_bdsm_hf_filename = _read_env_str("METALSTOCKS_LORA_FILENAME", lora_bdsm)
+             if not lora_bdsm_repo_id:
+                 raise RuntimeError("METALSTOCKS_LORA_REPO_ID não configurado (LoRA BDSM ausente no volume)")
+             token = _read_env_str("HF_TOKEN", "")
+             lora_path = hf_hub_download(
+                 repo_id=lora_bdsm_repo_id,
+                 filename=lora_bdsm_hf_filename,
+                 cache_dir=cache_root,
+                 token=token if token else None,
+             )
+             os.makedirs(f"{cache_root}/loras", exist_ok=True)
+             subprocess.run(f"cp -f {lora_path} {lora_bdsm_from}", shell=True, check=True)
+             subprocess.run(f"ln -sf {lora_bdsm_from} {lora_bdsm_dest}", shell=True, check=True)
+        except Exception as e:
+             print(f"[Assets] Erro ao baixar LoRA BDSM: {e}")
+
     try:
         ckpts = sorted(os.listdir(ckpt_dir))[:50]
         loras = sorted(os.listdir(lora_dir))[:50]
@@ -288,6 +418,32 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
             if negative and not negative_node_id and len(clip_ids) > 1:
                 workflow[clip_ids[1]].setdefault("inputs", {})["text"] = negative
 
+    # Injeção dinâmica de LoRA Extra (ex: BDSM)
+    # Procura um LoraLoader (node 8 ou qualquer outro)
+    # Se params['lora_name_2'] existir, tentamos encadear ou substituir se houver slot livre.
+    # Como os workflows atuais têm apenas 1 LoraLoader (node 8) ligado ao Checkpoint, 
+    # a maneira mais fácil sem alterar o JSON é substituir o LoRA padrão (Nobody) pelo LoRA específico se solicitado,
+    # OU assumir que o LoRA BDSM é mais importante.
+    # Mas o ideal é encadear.
+    # Se params['extra_lora'] estiver presente:
+    extra_lora = str(params.get("extra_lora") or "").strip()
+    if extra_lora:
+        # Encontra o node LoraLoader existente
+        lora_node_id = None
+        for nid, node in workflow.items():
+            if node.get("class_type") == "LoraLoader":
+                lora_node_id = nid
+                break
+        
+        if lora_node_id:
+            # Estratégia simples: Substituir o LoRA atual (geralmente estilo) pelo BDSM
+            # OU (Melhor): Se o workflow permitir, clonar o nó e encadear.
+            # Mas clonar nós dinamicamente é arriscado sem saber as conexões.
+            # Vamos substituir por enquanto, pois BDSM é um estilo forte.
+            workflow[lora_node_id]["inputs"]["lora_name"] = extra_lora
+            workflow[lora_node_id]["inputs"]["strength_model"] = 0.8
+            workflow[lora_node_id]["inputs"]["strength_clip"] = 0.8
+
     if filename_node_id and filename_node_id in workflow:
         workflow[filename_node_id].setdefault("inputs", {})["filename_prefix"] = str(params.get("filename_prefix") or "")
     else:
@@ -311,6 +467,7 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
         if not isinstance(node, dict):
             continue
         class_type = str(node.get("class_type") or "")
+        class_type_lower = class_type.lower().strip()
         inputs = node.get("inputs")
         if not isinstance(inputs, dict):
             continue
@@ -332,6 +489,17 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
             if params.get("ipadapter_end_at") is not None and "end_at" in inputs:
                 inputs["end_at"] = float(params.get("ipadapter_end_at"))
 
+        if "controlnetapply" in class_type_lower and params.get("control_strength") is not None and "strength" in inputs:
+            try:
+                inputs["strength"] = float(params.get("control_strength"))
+            except Exception:
+                pass
+        if params.get("denoise") is not None and "denoise" in inputs:
+            try:
+                inputs["denoise"] = float(params.get("denoise"))
+            except Exception:
+                pass
+
     return workflow
 
 
@@ -343,13 +511,14 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
     scaledown_window=_read_env_int("SCALEDOWN_WINDOW", 300),
     timeout=_read_env_int("JOB_TIMEOUT", 1200),
 )
-class ComfyUI:
+class ComfyUIService:
     port: int = _read_env_int("COMFYUI_PORT", 8188)
     _log_path: str = "/tmp/comfyui-server.log"
     _log_file = None
 
     @modal.enter()
     def start(self):
+        print("[app]", {"version": APP_VERSION})
         _ensure_assets_present()
         launch = ["python", "main.py", "--listen", "127.0.0.1", "--port", str(self.port)]
         try:
@@ -373,12 +542,229 @@ class ComfyUI:
     @modal.method()
     def generate(self, payload: dict) -> bytes:
         requested = str((payload or {}).get("workflow") or "").strip().lower()
-        workflow_path = "/root/workflow_pack_api.json" if requested == "pack" else "/root/workflow_api.json"
+        use_scene = False
+        if requested == "pack":
+            workflow_path = "/root/workflow_pack_api.json"
+        elif requested == "pose":
+            workflow_path = "/root/workflow_pose_api.json"
+        elif requested == "skeleton":
+            workflow_path = "/root/workflow_skeleton_api.json"
+        elif requested == "inpainting":
+            use_scene = _read_env_str("INPAINT_SCENE_CONTROLNET", "true").strip().lower() not in ("false", "0", "no")
+            workflow_path = "/root/workflow_inpainting_scene_api.json" if use_scene else "/root/workflow_inpainting_api.json"
+        else:
+            workflow_path = "/root/workflow_api.json"
+        print(
+            "[generate]",
+            {
+                "version": APP_VERSION,
+                "workflow": requested or "default",
+                "workflow_path": workflow_path,
+                "inpaint_scene": use_scene if requested == "inpainting" else None,
+            },
+        )
         workflow = json.loads(Path(workflow_path).read_text(encoding="utf-8"))
         client_id = uuid.uuid4().hex
 
         params = dict(payload or {})
+        if params.get("seed") is None:
+            try:
+                import random
+
+                params["seed"] = random.randint(1, 2_147_483_647)
+            except Exception:
+                params["seed"] = 1337
         params["filename_prefix"] = client_id
+
+        input_dir = Path("/root/comfy/ComfyUI/input")
+        input_dir.mkdir(parents=True, exist_ok=True)
+
+        def _ensure_placeholder_png(filename: str):
+            try:
+                p = input_dir / filename
+                p.write_bytes(base64.b64decode(_PLACEHOLDER_PNG_B64, validate=True))
+                try:
+                    sz = p.stat().st_size
+                    print("[Inputs] placeholder_written", {"file": filename, "bytes": sz, "note": "will be replaced if base64 input is provided"})
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"Erro criando placeholder {filename}: {e}")
+
+        _ensure_placeholder_png("ref.png")
+        _ensure_placeholder_png("pose.png")
+
+        def _save_input_b64(key: str, suffix: str, node_id: str):
+            val = str(params.get(key) or "").strip()
+            if not val or node_id not in workflow:
+                return
+            try:
+                img_bytes = base64.b64decode(val, validate=False)
+                fname = f"{client_id}_{suffix}.png"
+                out_path = input_dir / fname
+                if requested == "inpainting" and key == "base_image_base64":
+                    try:
+                        from PIL import Image
+
+                        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                        ar = str(params.get("aspect_ratio") or "").strip()
+                        base_res = int(_read_env_int("INPAINT_BASE_RES", 1024))
+
+                        def _mul64(x: float) -> int:
+                            v = int(round(x / 64.0) * 64)
+                            return max(64, v)
+
+                        target_w = 0
+                        target_h = 0
+                        if ar == "2:3":
+                            target_w, target_h = base_res, _mul64(base_res * 1.5)
+                        elif ar == "3:2":
+                            target_w, target_h = _mul64(base_res * 1.5), base_res
+                        elif ar == "1:1":
+                            target_w, target_h = base_res, base_res
+                        elif ar == "9:16":
+                            target_w, target_h = base_res, _mul64(base_res * (16.0 / 9.0))
+                        elif ar == "16:9":
+                            target_w, target_h = _mul64(base_res * (16.0 / 9.0)), base_res
+
+                        if target_w and target_h:
+                            src_w, src_h = img.size
+                            target_ar = target_w / float(target_h)
+                            src_ar = src_w / float(src_h)
+                            if src_ar > target_ar:
+                                new_w = int(src_h * target_ar)
+                                left = max(0, (src_w - new_w) // 2)
+                                img = img.crop((left, 0, left + new_w, src_h))
+                            else:
+                                new_h = int(src_w / target_ar)
+                                top = max(0, (src_h - new_h) // 2)
+                                img = img.crop((0, top, src_w, top + new_h))
+                            img = img.resize((target_w, target_h))
+                        img.save(out_path, format="PNG", optimize=True)
+                        workflow[node_id].setdefault("inputs", {})["image"] = fname
+                        try:
+                            print("[Inputs] base_normalized", {"file": fname, "size": list(img.size), "aspect_ratio": ar or None})
+                        except Exception:
+                            pass
+                        return
+                    except Exception as e:
+                        print("[Inputs] base_normalize_failed", {"error": str(e)})
+                if requested == "skeleton" and key == "pose_image_base64":
+                    try:
+                        from PIL import Image, ImageOps, ImageFilter
+
+                        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                        img = ImageOps.grayscale(img)
+                        img = img.point(lambda p: 255 if p > 20 else 0)
+                        img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
+                        img = img.convert("RGB")
+                        img.save(out_path, format="PNG", optimize=True)
+                    except Exception:
+                        out_path.write_bytes(img_bytes)
+                else:
+                    out_path.write_bytes(img_bytes)
+                workflow[node_id].setdefault("inputs", {})["image"] = fname
+                try:
+                    print("[Inputs] input_saved", {"key": key, "file": fname, "bytes": len(img_bytes), "node_id": node_id})
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"Erro salvando input {key}: {e}")
+
+        _save_input_b64("pose_image_base64", "pose", "20")
+        _save_input_b64("ref_image_base64", "ref", "9")
+        _save_input_b64("base_image_base64", "base", "30")
+        _save_input_b64("mask_base64", "mask", "31")
+
+        if requested == "inpainting" and "30" in workflow and "31" in workflow:
+            try:
+                base_path = input_dir / f"{client_id}_base.png"
+                mask_val = str(params.get("mask_base64") or "").strip()
+                if base_path.exists() and not mask_val:
+                    from PIL import Image, ImageChops, ImageDraw, ImageFilter
+
+                    img = Image.open(base_path)
+                    pose_type = str(params.get("poseType") or "").strip().lower()
+                    w, h = img.size
+                    img_rgb = img.convert("RGB")
+
+                    def _build_grey_overlay_mask() -> tuple[Image.Image, float]:
+                        px = img_rgb.getdata()
+                        out = bytearray(w * h)
+                        i = 0
+                        hit = 0
+                        for r, g, b in px:
+                            if abs(r - g) <= 6 and abs(r - b) <= 6 and 90 <= r <= 210:
+                                out[i] = 255
+                                hit += 1
+                            i += 1
+                        m = Image.frombytes("L", (w, h), bytes(out))
+                        try:
+                            m = m.filter(ImageFilter.MaxFilter(size=9))
+                        except Exception:
+                            pass
+                        try:
+                            m = m.filter(ImageFilter.GaussianBlur(radius=2))
+                        except Exception:
+                            pass
+                        ratio = (hit / float(w * h)) if w and h else 0.0
+                        return m, ratio
+
+                    mask_l = Image.new("L", (w, h), color=0)
+                    if pose_type == "doggystyle":
+                        draw = ImageDraw.Draw(mask_l)
+                        left = int(w * 0.10)
+                        right = int(w * 0.90)
+                        top = int(h * 0.18)
+                        bottom = int(h * 0.98)
+                        radius = int(min(w, h) * 0.06)
+                        try:
+                            draw.rounded_rectangle([left, top, right, bottom], radius=radius, fill=255)
+                        except Exception:
+                            draw.rectangle([left, top, right, bottom], fill=255)
+                        try:
+                            mask_l = mask_l.filter(ImageFilter.GaussianBlur(radius=2))
+                        except Exception:
+                            pass
+
+                    grey_l, grey_ratio = _build_grey_overlay_mask()
+                    try:
+                        mask_l = ImageChops.lighter(mask_l, grey_l)
+                    except Exception:
+                        pass
+                    if grey_ratio > 0.01:
+                        for node in workflow.values():
+                            if not isinstance(node, dict):
+                                continue
+                            class_type = str(node.get("class_type") or "")
+                            inputs = node.get("inputs")
+                            if not isinstance(inputs, dict):
+                                continue
+                            if "controlnetapply" in class_type.lower() and "strength" in inputs:
+                                try:
+                                    inputs["strength"] = min(float(inputs["strength"]), 0.6)
+                                except Exception:
+                                    pass
+                        for node in workflow.values():
+                            if not isinstance(node, dict):
+                                continue
+                            inputs = node.get("inputs")
+                            if not isinstance(inputs, dict):
+                                continue
+                            if "denoise" in inputs:
+                                try:
+                                    inputs["denoise"] = max(float(inputs["denoise"]), 0.65)
+                                except Exception:
+                                    pass
+
+                    mask = Image.merge("RGB", (mask_l, mask_l, mask_l))
+                    mask_name = f"{client_id}_mask.png"
+                    mask_path = input_dir / mask_name
+                    mask.save(mask_path, format="PNG", optimize=True)
+                    workflow["31"].setdefault("inputs", {})["image"] = mask_name
+            except Exception as e:
+                print(f"[Inpaint] erro gerando mask default: {e}")
+
         workflow = _apply_workflow_params(workflow, params)
 
         def find_first_node_id(class_type: str) -> str | None:
@@ -397,7 +783,8 @@ class ComfyUI:
         if not isinstance(use_ref_as_init, bool):
             use_ref_as_init = True
 
-        if refs:
+        has_ref_b64 = bool(str(params.get("ref_image_base64") or "").strip())
+        if refs and not has_ref_b64:
             load_image_id = find_first_node_id("LoadImage")
             vae_encode_id = find_first_node_id("VAEEncode")
             ksampler_id = find_first_node_id("KSampler")
@@ -542,7 +929,7 @@ def api(payload: dict | None = None):
     if not str(payload.get("prompt") or "").strip():
         return JSONResponse({"error": "Campo 'prompt' é obrigatório"}, status_code=400)
 
-    comfy = ComfyUI()
+    comfy = ComfyUIService()
     try:
         img_bytes = comfy.generate.remote(payload)
         return Response(content=img_bytes, media_type="image/png")

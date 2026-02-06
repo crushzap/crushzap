@@ -4,7 +4,7 @@ export async function criarContextoWhatsapp({ prisma, req, waMessage, ensureUser
   const user = await ensureUserByPhone(phone)
   const persona = await ensureDefaultPersona(user.id)
   const conv = await ensureConversation(user.id, persona.id)
-  const msgType = waMessage.type === 'audio' ? 'audio' : 'text'
+  const msgType = (waMessage?.type || 'text').toString()
   const text = (waMessage.text || '').toString()
   const reply = (waMessage.replyId || '').toString()
   const typed = text.replace(/[!?.]/g, '').trim().toLowerCase()
@@ -14,4 +14,3 @@ export async function criarContextoWhatsapp({ prisma, req, waMessage, ensureUser
   const billing = maps?.billingFlow?.get(user.id)
   return { prisma, req, waMessage, phone, user, persona, conv, msgType, text, reply, typed, sendId, state, flow, billing, maps }
 }
-

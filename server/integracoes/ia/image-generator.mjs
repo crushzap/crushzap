@@ -4,6 +4,9 @@ import { gerarImagemFal } from './fal-client.mjs';
 import { gerarImagemComfyUI } from './comfyui-client.mjs';
 import { gerarImagemRunComfy } from './runcomfy-client.mjs';
 import { gerarImagemModal } from './modal-client.mjs';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 function promptPedeCloseUp(prompt) {
   const p = String(prompt || '')
@@ -85,8 +88,9 @@ async function baixarRefComoBase64(url) {
  * @param {string} [params.aspectRatio="2:3"] - Proporção (ex: "2:3")
  * @returns {Promise<{ok: boolean, url?: string, provider?: string, error?: string}>}
  */
-export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePrompt, refs, poseType, seed }) {
+export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePrompt, refs, poseType, seed, baseImage, maskImage }) {
   console.log(`[ImageGenerator] Iniciando geração. Prompt: ${prompt.slice(0, 50)}...`);
+  const recentKey = `${String(poseType || '').toLowerCase().trim()}|${Array.isArray(refs) && refs.length ? String(refs[0] || '') : ''}`
 
   const refsArr = Array.isArray(refs) ? refs : []
   // Força detecção de close-up se a pose for explicita de partes intimas ou se o prompt pedir
@@ -122,14 +126,189 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
      }
   }
 
-  const ipadapterWeight = closeUp ? ipadapterWeightCloseUp : ipadapterWeightDefault
+  let ipadapterWeight = closeUp ? ipadapterWeightCloseUp : ipadapterWeightDefault
   if ((process.env.DEBUG_IMAGE_FRAMING || '').toString().trim() === 'true') {
     console.log('[ImageGenerator] Framing', { closeUp, poseType, refsIn: refsArr.length, refsCloseUp: refsCloseUp.length, refsModal: refsParaModal.length, refsFallbacks: refsParaFallbacks.length, denoiseParaModal, ipadapterWeight })
   }
 
+  // Lógica de Pose Asset (ControlNet)
+  let selectedWorkflow = refsParaModal.length ? 'pack' : ''
+  let selectedPoseImage = undefined
+  let extraLora = undefined
+
+  if (baseImage) {
+    selectedWorkflow = 'inpainting'
+    selectedPoseImage = undefined
+  }
+  
+  // Ordem importa: Poses mais específicas primeiro!
+   const poseMap = {
+       // 1. BDSM & Específicos (Prioridade Máxima)
+       'metalstocks': 'assets/poses/NSFW_metalstocks',
+       'algema': 'assets/poses/NSFW_metalstocks',
+       'presa': 'assets/poses/NSFW_metalstocks',
+       'shackles': 'assets/poses/NSFW_metalstocks',
+       'handcuff': 'assets/poses/NSFW_metalstocks',
+       'handcuffs': 'assets/poses/NSFW_metalstocks',
+       'handcuffed': 'assets/poses/NSFW_metalstocks',
+       'cuffs': 'assets/poses/NSFW_metalstocks',
+       'manacles': 'assets/poses/NSFW_metalstocks',
+       'shibari': 'assets/poses/NSFW_suspended',
+       'rope bondage': 'assets/poses/NSFW_suspended',
+       'ropes': 'assets/poses/NSFW_suspended',
+       'suspended': 'assets/poses/NSFW_suspended',
+       'bondage': 'assets/poses/NSFW_suspended',
+       'amarrada': 'assets/poses/NSFW_suspended',
+       'cordas': 'assets/poses/NSFW_suspended',
+
+       // 2. Poses "Fortes" (Definem a posição do corpo todo)
+       'doggy': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'],
+       'de quatro': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'],
+       'de 4': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'], // Adicionado variação numérica
+       'doggystyle': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'],
+       'all fours': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'],
+       
+       'squatting': 'assets/poses/NSFW_Squatting',
+       'agachada': 'assets/poses/NSFW_Squatting',
+       
+       'standing': 'assets/poses/NSFW_standing',
+       'em pé': 'assets/poses/NSFW_standing',
+       'de pé': 'assets/poses/NSFW_standing',
+
+       'kneeling': 'assets/poses/NSFW_Kneeling',
+       'ajoelhada': 'assets/poses/NSFW_Kneeling',
+       'de joelhos': 'assets/poses/NSFW_Kneeling',
+       'blowjob': 'assets/poses/NSFW_Kneeling',
+       'boquete': 'assets/poses/NSFW_Kneeling',
+       'cowgirl': 'assets/poses/NSFW_Kneeling',
+       'cavalgando': 'assets/poses/NSFW_Kneeling',
+
+       // 3. Poses "Médias" (Lying/Sitting podem ser genéricas)
+       'lying': 'assets/poses/NSFW_lying',
+       'deitada': 'assets/poses/NSFW_lying',
+       'cama': 'assets/poses/NSFW_lying',
+       'legs up': 'assets/poses/NSFW_lying',
+       'missionary': 'assets/poses/NSFW_lying',
+       'papai e mamãe': 'assets/poses/NSFW_lying',
+
+       'sitting': 'assets/poses/NSFW_sitting',
+       'sentada': 'assets/poses/NSFW_sitting',
+       'sofa': 'assets/poses/NSFW_sitting',
+       'cadeira': 'assets/poses/NSFW_sitting',
+
+       // 4. Detalhes/Variações (Menor prioridade, só ativa se não tiver doggy/standing etc)
+       'split': 'assets/poses/NSFW_split_leg',
+       'spread': 'assets/poses/NSFW_split_leg',
+       'aberta': 'assets/poses/NSFW_split_leg',
+       'pernas abertas': 'assets/poses/NSFW_split_leg'
+   }
+    const textSearch = (String(prompt) + ' ' + String(poseType)).toLowerCase()
+    
+    if ((process.env.DEBUG_IMAGE_FRAMING || '').toString().trim() === 'true') {
+        console.log('[ImageGenerator] Buscando pose para:', textSearch)
+    }
+
+    // Detectar LoRA BDSM
+  if (textSearch.includes('metalstocks') || textSearch.includes('shackles') || textSearch.includes('bondage')) {
+      extraLora = 'metalstocks2-03.safetensors'
+      console.log('[ImageGenerator] LoRA BDSM ativado')
+  }
+
+  const _recentAssets = globalThis.__recentPoseAssets ?? (globalThis.__recentPoseAssets = new Map())
+  const rememberAsset = (k, file) => {
+    const max = Math.max(2, parseInt((process.env.RECENT_POSE_ASSETS_MAX || '6').toString(), 10) || 6)
+    const arr = Array.isArray(_recentAssets.get(k)) ? _recentAssets.get(k) : []
+    const next = [file, ...arr.filter((v) => v !== file)].slice(0, max)
+    _recentAssets.set(k, next)
+  }
+  const getRecent = (k) => {
+    const arr = _recentAssets.get(k)
+    return Array.isArray(arr) ? arr : []
+  }
+
+  for (const [key, pathOrFile] of Object.entries(poseMap)) {
+      if (textSearch.includes(key)) {
+          try {
+             // Se for diretório, sorteia um arquivo
+             const candidates = Array.isArray(pathOrFile) ? pathOrFile : [pathOrFile]
+             let targetFile = candidates[0]
+
+             for (const candidate of candidates) {
+               if (!existsSync(candidate)) continue
+               if (candidate.endsWith('.png')) {
+                 targetFile = candidate
+                 break
+               }
+
+               const filesAll = readdirSync(candidate).filter(f => f.endsWith('.png') && !f.includes('depth'))
+               if (!filesAll.length) continue
+               const filesPhoto = filesAll.filter(f => {
+                 const l = f.toLowerCase()
+                 return !l.includes('lineart') && !l.includes('bone') && !l.includes('skeleton')
+               })
+               const filesLineart = filesAll.filter(f => f.toLowerCase().includes('lineart'))
+               const filesBone = filesAll.filter(f => f.toLowerCase().includes('bone') || f.toLowerCase().includes('skeleton'))
+               const filesOther = filesAll.filter(f => !f.toLowerCase().includes('lineart') && !f.toLowerCase().includes('bone') && !f.toLowerCase().includes('skeleton'))
+               const files = filesPhoto.length ? filesPhoto : (filesLineart.length ? filesLineart : (filesBone.length ? filesBone : filesOther))
+               if (!files.length) continue
+               const recents = new Set(getRecent(recentKey))
+               const pool = files.filter((f) => !recents.has(join(candidate, f)))
+               const pickFrom = pool.length ? pool : files
+               const randomFile = pickFrom[Math.floor(Math.random() * pickFrom.length)]
+               targetFile = join(candidate, randomFile)
+               break
+             }
+
+             if (existsSync(targetFile)) {
+                 const lower = targetFile.toLowerCase()
+                 const isLineart = lower.includes('lineart')
+                 const isSkeleton = lower.includes('bone') || lower.includes('skeleton')
+                 const canUseAsBaseScene = !baseImage && !isLineart && !isSkeleton
+
+                 if (canUseAsBaseScene) {
+                   selectedWorkflow = 'inpainting'
+                   selectedPoseImage = undefined
+                   baseImage = targetFile
+                   rememberAsset(recentKey, targetFile)
+                 } else {
+                   selectedWorkflow = 'pose'
+                   selectedPoseImage = targetFile
+                   rememberAsset(recentKey, targetFile)
+                 }
+                 console.log('[ImageGenerator] Pose detectada:', key, 'Asset:', targetFile, 'Workflow:', selectedWorkflow)
+                 break
+             }
+          } catch (e) {
+              console.error('[ImageGenerator] Erro ao buscar pose asset:', e)
+          }
+      }
+  }
+
   // 1. Tentar Modal
   try {
-    const refImageBase64 = refsParaModal.length ? await baixarRefComoBase64(refsParaModal[0]) : null
+    const controlStrength =
+      selectedWorkflow === 'pose' && selectedPoseImage
+        ? (readEnvNumber('MODAL_CONTROLNET_STRENGTH') ?? 0.95)
+        : undefined
+    if (selectedWorkflow === 'inpainting' && refsParaModal.length) {
+      const inpaintWeight = readEnvNumber('MODAL_INPAINT_IPADAPTER_WEIGHT')
+      const resolved = Number.isFinite(Number(inpaintWeight)) ? Number(inpaintWeight) : 0.6
+      ipadapterWeight = Math.max(0, Math.min(2, resolved))
+    }
+    let refImageBase64 = refsParaModal.length ? await baixarRefComoBase64(refsParaModal[0]) : null
+    if (!refImageBase64) {
+      const fallbackRefPath = join(process.cwd(), 'assets', 'poses', 'ref.png')
+      if (existsSync(fallbackRefPath)) {
+        try {
+          const buf = await readFile(fallbackRefPath)
+          if (buf?.length) refImageBase64 = buf.toString('base64')
+        } catch {}
+      }
+    }
+    const denoiseForModal =
+      selectedWorkflow === 'inpainting'
+        ? (readEnvNumber('MODAL_INPAINT_DENOISE') ?? 0.35)
+        : denoiseParaModal
     const resultModal = await gerarImagemModal({
       prompt,
       negativePrompt,
@@ -137,11 +316,16 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
       refs: refsParaModal,
       poseType,
       seed,
-      workflow: refsParaModal.length ? 'pack' : '',
+      workflow: selectedWorkflow,
+      poseImage: selectedPoseImage,
+      ...(baseImage ? { baseImage } : {}),
+      ...(maskImage ? { maskImage } : {}),
+      extraLora,
       useRefAsInit: closeUp ? false : true,
       ...(refsParaModal.length ? { ipadapterWeight } : {}),
       ...(refImageBase64 ? { refImageBase64 } : {}),
-      ...(typeof denoiseParaModal === 'number' ? { denoise: denoiseParaModal } : {}),
+      ...(typeof controlStrength === 'number' ? { controlStrength } : {}),
+      ...(Number.isFinite(Number(denoiseForModal)) ? { denoise: Number(denoiseForModal) } : {}),
     });
     if (resultModal.ok) {
       console.log("[ImageGenerator] Sucesso com Modal");

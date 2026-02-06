@@ -1,0 +1,346 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "juggernautXL_ragnarokBy.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": "Close-up photorealistic shot, detailed texture, natural lighting, no filter.",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "child, underage, male, text, logo, watermark, signature, censored, censor bar, mosaic, blur, grey bar, gray bar, extra fingers, six fingers, 6 fingers, extra digit, extra digits, extra limbs, multiple hands, duplicate person, duplicate body, duplicate torso, extra breasts, duplicate breasts, extra nipples, misplaced nipples, bad anatomy, deformed, disfigured, malformed, mutated, distorted face, distorted hands, bad hands, deformed hands, fused fingers, missing fingers, long fingers, poorly drawn hands, plastic skin, doll, wax, CGI, 3d render, anime, cartoon, airbrushed, beauty filter, over-smooth skin, glossy skin, fake, low quality, artifacts",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "seed": 1337,
+      "steps": 36,
+      "cfg": 3,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 0.5,
+      "model": [
+        "12",
+        0
+      ],
+      "positive": [
+        "45",
+        0
+      ],
+      "negative": [
+        "45",
+        1
+      ],
+      "latent_image": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "7": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "8": {
+    "inputs": {
+      "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "Load CLIP Vision"
+    }
+  },
+  "9": {
+    "inputs": {
+      "image": "ref.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Ref Image (Persona)"
+    }
+  },
+  "11": {
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
+    },
+    "class_type": "IPAdapterModelLoader",
+    "_meta": {
+      "title": "Load IPAdapter"
+    }
+  },
+  "12": {
+    "inputs": {
+      "ipadapter": [
+        "11",
+        0
+      ],
+      "clip_vision": [
+        "8",
+        0
+      ],
+      "image": [
+        "9",
+        0
+      ],
+      "model": [
+        "1",
+        0
+      ],
+      "weight": 0.55,
+      "combine_embeds": "concat",
+      "embeds_scaling": "V only",
+      "weight_type": "linear",
+      "start_at": 0,
+      "end_at": 1
+    },
+    "class_type": "IPAdapterAdvanced",
+    "_meta": {
+      "title": "Apply IPAdapter"
+    }
+  },
+  "30": {
+    "inputs": {
+      "image": "base.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Base Image (Init)"
+    }
+  },
+  "31": {
+    "inputs": {
+      "image": "mask.png",
+      "channel": "red"
+    },
+    "class_type": "LoadImageMask",
+    "_meta": {
+      "title": "Load Mask"
+    }
+  },
+  "32": {
+    "inputs": {
+      "pixels": [
+        "30",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "mask": [
+        "31",
+        0
+      ],
+      "grow_mask_by": 10
+    },
+    "class_type": "VAEEncodeForInpaint",
+    "_meta": {
+      "title": "VAE Encode For Inpaint"
+    }
+  },
+  "41": {
+    "inputs": {
+      "image": [
+        "30",
+        0
+      ],
+      "low_threshold": 100,
+      "high_threshold": 200
+    },
+    "class_type": "CannyEdgePreprocessor",
+    "_meta": {
+      "title": "Canny (Base)"
+    }
+  },
+  "42": {
+    "inputs": {
+      "image": [
+        "30",
+        0
+      ],
+      "resolution": 1024
+    },
+    "class_type": "MiDaS-DepthMapPreprocessor",
+    "_meta": {
+      "title": "Depth (Base)"
+    }
+  },
+  "47": {
+    "inputs": {
+      "image": [
+        "30",
+        0
+      ],
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "resolution": 1024,
+      "bbox_detector": "yolox_l.onnx",
+      "pose_estimator": "dw-ll_ucoco_384.onnx"
+    },
+    "class_type": "DWPreprocessor",
+    "_meta": {
+      "title": "DW Pose (Base)"
+    }
+  },
+  "48": {
+    "inputs": {
+      "control_net_name": "OpenPoseXL2.safetensors"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Load ControlNet (OpenPose)"
+    }
+  },
+  "49": {
+    "inputs": {
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "control_net": [
+        "48",
+        0
+      ],
+      "image": [
+        "47",
+        0
+      ],
+      "strength": 0.8,
+      "start_percent": 0,
+      "end_percent": 1
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet (OpenPose)"
+    }
+  },
+  "43": {
+    "inputs": {
+      "control_net_name": "diffusers_xl_canny_full.safetensors"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Load ControlNet (Canny)"
+    }
+  },
+  "44": {
+    "inputs": {
+      "positive": [
+        "49",
+        0
+      ],
+      "negative": [
+        "49",
+        1
+      ],
+      "control_net": [
+        "43",
+        0
+      ],
+      "image": [
+        "41",
+        0
+      ],
+      "strength": 0.7,
+      "start_percent": 0,
+      "end_percent": 1
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet (Canny)"
+    }
+  },
+  "40": {
+    "inputs": {
+      "control_net_name": "diffusers_xl_depth_full.safetensors"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Load ControlNet (Depth)"
+    }
+  },
+  "45": {
+    "inputs": {
+      "positive": [
+        "44",
+        0
+      ],
+      "negative": [
+        "44",
+        1
+      ],
+      "control_net": [
+        "40",
+        0
+      ],
+      "image": [
+        "42",
+        0
+      ],
+      "strength": 0.55,
+      "start_percent": 0,
+      "end_percent": 1
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet (Depth)"
+    }
+  }
+}
