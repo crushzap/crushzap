@@ -8,12 +8,37 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
+const PROMPT_MAOS_POSITIVO =
+  'Perfect hand, Detailed hand, detailed perfect hands, five fingers per hand, anatomically correct fingers, no fused fingers, no extra digits, no missing fingers, realistic hand proportions, detailed knuckles and nails, natural hand pose'
+
+const PROMPT_MAOS_NEGATIVO =
+  'deformed hands, mutated fingers, extra fingers, missing fingers, fused fingers, bad anatomy hands, poorly drawn hands, blurry hands, lowres hands, six fingers, three fingers'
+
 function promptPedeCloseUp(prompt) {
   const p = String(prompt || '')
   const hasClose = /\b(extreme close-up|close-up|macro lens|macro)\b/i.test(p)
   const hasFullBody = /\bfull[- ]body\b/i.test(p)
   const hasNegatedFullBody = /\b(no|without)\s+full[- ]body\b/i.test(p)
   return hasClose && (!hasFullBody || hasNegatedFullBody)
+}
+
+function anexarFragmentoPrompt(base, fragmento) {
+  const b = String(base || '').trim()
+  const f = String(fragmento || '').trim()
+  if (!f) return b
+  if (!b) return f
+  if (b.toLowerCase().includes(f.toLowerCase())) return b
+  if (b.endsWith(',')) return `${b} ${f}`
+  return `${b}, ${f}`
+}
+
+function aplicarCorrecaoDeMaosNoPrompt({ prompt, negativePrompt }) {
+  const desativado = String(process.env.DISABLE_HAND_FIX || '').trim().toLowerCase() === 'true'
+  if (desativado) return { prompt, negativePrompt }
+  return {
+    prompt: anexarFragmentoPrompt(prompt, PROMPT_MAOS_POSITIVO),
+    negativePrompt: anexarFragmentoPrompt(negativePrompt, PROMPT_MAOS_NEGATIVO),
+  }
 }
 
 function readEnvNumber(name) {
@@ -89,6 +114,7 @@ async function baixarRefComoBase64(url) {
  * @returns {Promise<{ok: boolean, url?: string, provider?: string, error?: string}>}
  */
 export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePrompt, refs, poseType, seed, baseImage, maskImage }) {
+  ;({ prompt, negativePrompt } = aplicarCorrecaoDeMaosNoPrompt({ prompt, negativePrompt }))
   console.log(`[ImageGenerator] Iniciando geração. Prompt: ${prompt.slice(0, 50)}...`);
   const recentKey = `${String(poseType || '').toLowerCase().trim()}|${Array.isArray(refs) && refs.length ? String(refs[0] || '') : ''}`
 

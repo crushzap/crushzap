@@ -104,8 +104,8 @@ function outfitPtToEn(outfitPt) {
     ['short', 'shorts and t-shirt, casual outfit, fully clothed'],
     ['saia', 'skirt and blouse, feminine outfit, fully clothed'],
     ['jeans', 'blue jeans, casual t-shirt, fully clothed'],
-    ['biquíni', 'bikini, swimwear'],
-    ['bikini', 'bikini, swimwear'],
+    ['biquíni', 'bikini, beachwear'],
+    ['bikini', 'bikini, beachwear'],
     ['lingerie', 'lingerie set, underwear'],
     ['calcinha', 'panties and bra'],
     ['sutiã', 'bra and panties'],
@@ -275,7 +275,12 @@ function buildNegativePrompt({ bodyTypeEn, traitsEn, type }) {
   }
 
   if (type && type.includes('outfit')) {
-     extra.push('nude', 'naked', 'topless', 'nipples', 'areolas', 'pussy', 'sex', 'nsfw')
+     const isBikini = t.includes('bikini') || t.includes('swimwear') || t.includes('beachwear') || t.includes('lingerie') || t.includes('underwear')
+     const extraNude = ['nude', 'naked', 'nipples', 'areolas', 'pussy', 'sex', 'nsfw']
+     if (!isBikini) {
+        extraNude.push('topless')
+     }
+     extra.push(...extraNude)
   }
 
   if (type && type.startsWith('face_')) {

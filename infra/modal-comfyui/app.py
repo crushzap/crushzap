@@ -15,6 +15,17 @@ _PLACEHOLDER_PNG_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+uZQAAAAASUVORK5CYII="
 )
 APP_VERSION = "2026-02-03-inpaint-mask-fix5"
+HANDS_LORA_FILENAME = "Better hands - SDXL v2.0.safetensors"
+DEFAULT_LOCAL_HANDS_LORA_PATH_WIN = r"E:\APLICATIVOS\projects\aura\comfyui\models\loras\Better hands - SDXL v2.0.safetensors"
+HANDS_POSITIVE_PROMPT = (
+    "Perfect hand, Detailed hand, detailed perfect hands, five fingers per hand, "
+    "anatomically correct fingers, no fused fingers, no extra digits, no missing fingers, "
+    "realistic hand proportions, detailed knuckles and nails, natural hand pose"
+)
+HANDS_NEGATIVE_PROMPT = (
+    "deformed hands, mutated fingers, extra fingers, missing fingers, fused fingers, "
+    "bad anatomy hands, poorly drawn hands, blurry hands, lowres hands, six fingers, three fingers"
+)
 
 
 def _read_env_str(name: str, default: str = "") -> str:
@@ -166,6 +177,23 @@ image = image.add_local_file(Path(__file__).parent / "workflow_skeleton_api.json
 image = image.add_local_file(Path(__file__).parent / "workflow_inpainting_api.json", "/root/workflow_inpainting_api.json")
 image = image.add_local_file(Path(__file__).parent / "workflow_inpainting_scene_api.json", "/root/workflow_inpainting_scene_api.json")
 
+def _maybe_add_local_hands_lora(img: modal.Image) -> modal.Image:
+    raw = _read_env_str("LOCAL_HANDS_LORA_PATH", "")
+    candidates = []
+    if raw:
+        candidates.append(raw)
+    candidates.append(DEFAULT_LOCAL_HANDS_LORA_PATH_WIN)
+    for c in candidates:
+        try:
+            p = Path(c)
+            if p.exists() and p.is_file():
+                return img.add_local_file(p, f"/root/comfy/ComfyUI/models/loras/{HANDS_LORA_FILENAME}")
+        except Exception:
+            continue
+    return img
+
+image = _maybe_add_local_hands_lora(image)
+
 def _extract_assets_from_workflow(workflow: dict) -> tuple[str, str, str, str]:
     ckpt_name = ""
     lora_name = ""
@@ -181,8 +209,10 @@ def _extract_assets_from_workflow(workflow: dict) -> tuple[str, str, str, str]:
             continue
         if not ckpt_name and class_type == "CheckpointLoaderSimple":
             ckpt_name = str(inputs.get("ckpt_name") or "").strip()
-        if not lora_name and class_type == "LoraLoader":
-            lora_name = str(inputs.get("lora_name") or "").strip()
+        if class_type == "LoraLoader":
+            candidate = str(inputs.get("lora_name") or "").strip()
+            if candidate and candidate != HANDS_LORA_FILENAME and not lora_name:
+                lora_name = candidate
         if not clip_vision_name and class_type == "CLIPVisionLoader":
             clip_vision_name = str(inputs.get("clip_name") or "").strip()
         if not ipadapter_name and class_type == "IPAdapterModelLoader":
@@ -260,6 +290,37 @@ def _ensure_assets_present():
             except Exception:
                 subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
         print("[Assets] lora", {"default": lora_default, "pack": lora_pack, "env": _read_env_str("LORA_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
+
+    hands_src = f"{cache_root}/loras/{HANDS_LORA_FILENAME}"
+    hands_dest = f"{lora_dir}/{HANDS_LORA_FILENAME}"
+    if not os.path.exists(hands_dest):
+        if os.path.exists(hands_src):
+            try:
+                shutil.copyfile(hands_src, hands_dest)
+            except Exception:
+                try:
+                    subprocess.run(f"ln -sf {hands_src} {hands_dest}", shell=True, check=True)
+                except Exception:
+                    pass
+        else:
+            hands_url = _read_env_str("HANDS_LORA_URL", "")
+            if hands_url:
+                try:
+                    import requests
+
+                    os.makedirs(f"{cache_root}/loras", exist_ok=True)
+                    with requests.get(hands_url, stream=True, timeout=120) as r:
+                        r.raise_for_status()
+                        with open(hands_src, "wb") as f:
+                            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                                if chunk:
+                                    f.write(chunk)
+                    try:
+                        shutil.copyfile(hands_src, hands_dest)
+                    except Exception:
+                        subprocess.run(f"ln -sf {hands_src} {hands_dest}", shell=True, check=True)
+                except Exception as e:
+                    print(f"[Assets] Erro ao baixar Hands LoRA: {e}")
 
     if clip_vision_filename:
         os.makedirs(clip_vision_dir, exist_ok=True)
@@ -398,51 +459,207 @@ def _pick_clip_text_nodes(workflow: dict) -> list[str]:
     return ids
 
 
+def _ref_matches(v: object, node_id: str, output_index: int) -> bool:
+    if not isinstance(v, list) or len(v) != 2:
+        return False
+    try:
+        return str(v[0]) == str(node_id) and int(v[1]) == int(output_index)
+    except Exception:
+        return False
+
+
+def _next_numeric_node_id(workflow: dict) -> str:
+    mx = 0
+    for k in workflow.keys():
+        try:
+            mx = max(mx, int(str(k)))
+        except Exception:
+            continue
+    return str(mx + 1)
+
+
+def _find_first_node_id(workflow: dict, class_type: str) -> str | None:
+    target = class_type.lower().strip()
+    for node_id, node in workflow.items():
+        if isinstance(node, dict) and str(node.get("class_type") or "").lower().strip() == target:
+            return str(node_id)
+    return None
+
+
+def _ensure_hands_lora(workflow: dict, strength: float) -> str | None:
+    ckpt_id = _find_first_node_id(workflow, "CheckpointLoaderSimple")
+    if not ckpt_id:
+        return None
+
+    for nid, node in workflow.items():
+        if not isinstance(node, dict) or node.get("class_type") != "LoraLoader":
+            continue
+        inputs = node.get("inputs")
+        if isinstance(inputs, dict) and str(inputs.get("lora_name") or "").strip() == HANDS_LORA_FILENAME:
+            return str(nid)
+
+    existing_lora_direct = None
+    for nid, node in workflow.items():
+        if not isinstance(node, dict) or node.get("class_type") != "LoraLoader":
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        if _ref_matches(inputs.get("model"), ckpt_id, 0) and _ref_matches(inputs.get("clip"), ckpt_id, 1):
+            existing_lora_direct = str(nid)
+            break
+
+    hands_id = _next_numeric_node_id(workflow)
+    workflow[hands_id] = {
+        "inputs": {
+            "lora_name": HANDS_LORA_FILENAME,
+            "strength_model": float(strength),
+            "strength_clip": float(strength),
+            "model": [ckpt_id, 0],
+            "clip": [ckpt_id, 1],
+        },
+        "class_type": "LoraLoader",
+        "_meta": {"title": "Load Hands LoRA"},
+    }
+
+    if existing_lora_direct and existing_lora_direct in workflow:
+        workflow[existing_lora_direct].setdefault("inputs", {})["model"] = [hands_id, 0]
+        workflow[existing_lora_direct].setdefault("inputs", {})["clip"] = [hands_id, 1]
+        return hands_id
+
+    for nid, node in workflow.items():
+        if str(nid) == str(hands_id):
+            continue
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        if _ref_matches(inputs.get("model"), ckpt_id, 0):
+            inputs["model"] = [hands_id, 0]
+        if _ref_matches(inputs.get("clip"), ckpt_id, 1):
+            inputs["clip"] = [hands_id, 1]
+    return hands_id
+
+
+def _append_prompt_fragment(base: str, fragment: str) -> str:
+    b = str(base or "").strip()
+    f = str(fragment or "").strip()
+    if not f:
+        return b
+    if not b:
+        return f
+    if f.lower() in b.lower():
+        return b
+    if b.endswith(","):
+        return b + " " + f
+    return b + ", " + f
+
+
+def _inject_style_lora_after(workflow: dict, upstream_id: str, lora_name: str, strength: float) -> str:
+    new_id = _next_numeric_node_id(workflow)
+    workflow[new_id] = {
+        "inputs": {
+            "lora_name": lora_name,
+            "strength_model": float(strength),
+            "strength_clip": float(strength),
+            "model": [upstream_id, 0],
+            "clip": [upstream_id, 1],
+        },
+        "class_type": "LoraLoader",
+        "_meta": {"title": "Load Extra LoRA"},
+    }
+    for nid, node in workflow.items():
+        if str(nid) == str(new_id):
+            continue
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        if _ref_matches(inputs.get("model"), upstream_id, 0):
+            inputs["model"] = [new_id, 0]
+        if _ref_matches(inputs.get("clip"), upstream_id, 1):
+            inputs["clip"] = [new_id, 1]
+    return new_id
+
+
 def _apply_workflow_params(workflow: dict, params: dict) -> dict:
-    prompt = str(params.get("prompt") or "")
-    negative = str(params.get("negative_prompt") or "")
     prompt_node_id = _read_env_str("WORKFLOW_PROMPT_NODE_ID", "")
     negative_node_id = _read_env_str("WORKFLOW_NEGATIVE_NODE_ID", "")
     filename_node_id = _read_env_str("WORKFLOW_FILENAME_NODE_ID", "")
 
-    if prompt_node_id and prompt_node_id in workflow:
-        workflow[prompt_node_id].setdefault("inputs", {})["text"] = prompt
-    if negative_node_id and negative_node_id in workflow:
-        workflow[negative_node_id].setdefault("inputs", {})["text"] = negative
+    clip_ids = _pick_clip_text_nodes(workflow)
+    pos_id = prompt_node_id if (prompt_node_id and prompt_node_id in workflow) else (clip_ids[0] if clip_ids else "")
+    neg_id = negative_node_id if (negative_node_id and negative_node_id in workflow) else (clip_ids[1] if len(clip_ids) > 1 else "")
 
-    if (not prompt_node_id) or (negative and not negative_node_id):
-        clip_ids = _pick_clip_text_nodes(workflow)
-        if clip_ids:
-            if not prompt_node_id:
-                workflow[clip_ids[0]].setdefault("inputs", {})["text"] = prompt
-            if negative and not negative_node_id and len(clip_ids) > 1:
-                workflow[clip_ids[1]].setdefault("inputs", {})["text"] = negative
+    existing_prompt = ""
+    existing_negative = ""
+    if pos_id and pos_id in workflow:
+        existing_prompt = str((workflow[pos_id].get("inputs") or {}).get("text") or "")
+    if neg_id and neg_id in workflow:
+        existing_negative = str((workflow[neg_id].get("inputs") or {}).get("text") or "")
 
-    # Injeção dinâmica de LoRA Extra (ex: BDSM)
-    # Procura um LoraLoader (node 8 ou qualquer outro)
-    # Se params['lora_name_2'] existir, tentamos encadear ou substituir se houver slot livre.
-    # Como os workflows atuais têm apenas 1 LoraLoader (node 8) ligado ao Checkpoint, 
-    # a maneira mais fácil sem alterar o JSON é substituir o LoRA padrão (Nobody) pelo LoRA específico se solicitado,
-    # OU assumir que o LoRA BDSM é mais importante.
-    # Mas o ideal é encadear.
-    # Se params['extra_lora'] estiver presente:
+    prompt = str(params.get("prompt") or "").strip() or existing_prompt
+    negative = str(params.get("negative_prompt") or "").strip() or existing_negative
+
+    disable_hand_fix = str(params.get("disable_hand_fix") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+    if not disable_hand_fix:
+        prompt = _append_prompt_fragment(prompt, HANDS_POSITIVE_PROMPT)
+        negative = _append_prompt_fragment(negative, HANDS_NEGATIVE_PROMPT)
+        try:
+            hands_strength = float(params.get("hands_lora_strength") or _read_env_str("HANDS_LORA_STRENGTH", "0.7"))
+        except Exception:
+            hands_strength = 0.7
+        hands_node_id = _ensure_hands_lora(workflow, hands_strength)
+    else:
+        hands_node_id = None
+
+    if pos_id and pos_id in workflow:
+        workflow[pos_id].setdefault("inputs", {})["text"] = prompt
+    if neg_id and neg_id in workflow:
+        workflow[neg_id].setdefault("inputs", {})["text"] = negative
+
     extra_lora = str(params.get("extra_lora") or "").strip()
     if extra_lora:
-        # Encontra o node LoraLoader existente
         lora_node_id = None
         for nid, node in workflow.items():
-            if node.get("class_type") == "LoraLoader":
-                lora_node_id = nid
-                break
-        
-        if lora_node_id:
-            # Estratégia simples: Substituir o LoRA atual (geralmente estilo) pelo BDSM
-            # OU (Melhor): Se o workflow permitir, clonar o nó e encadear.
-            # Mas clonar nós dinamicamente é arriscado sem saber as conexões.
-            # Vamos substituir por enquanto, pois BDSM é um estilo forte.
-            workflow[lora_node_id]["inputs"]["lora_name"] = extra_lora
-            workflow[lora_node_id]["inputs"]["strength_model"] = 0.8
-            workflow[lora_node_id]["inputs"]["strength_clip"] = 0.8
+            if not isinstance(node, dict) or node.get("class_type") != "LoraLoader":
+                continue
+            inputs = node.get("inputs")
+            if not isinstance(inputs, dict):
+                continue
+            if str(inputs.get("lora_name") or "").strip() == HANDS_LORA_FILENAME:
+                continue
+            lora_node_id = str(nid)
+            break
+
+        if lora_node_id and lora_node_id in workflow:
+            workflow[lora_node_id].setdefault("inputs", {})["lora_name"] = extra_lora
+            workflow[lora_node_id].setdefault("inputs", {})["strength_model"] = 0.8
+            workflow[lora_node_id].setdefault("inputs", {})["strength_clip"] = 0.8
+        else:
+            upstream = hands_node_id or _find_first_node_id(workflow, "CheckpointLoaderSimple")
+            if upstream:
+                _inject_style_lora_after(workflow, str(upstream), extra_lora, 0.8)
+
+    ksampler_id = _find_first_node_id(workflow, "KSampler")
+    clip_provider_id = None
+    if ksampler_id and ksampler_id in workflow:
+        ks_inputs = workflow[ksampler_id].get("inputs")
+        if isinstance(ks_inputs, dict) and isinstance(ks_inputs.get("model"), list) and len(ks_inputs["model"]) == 2:
+            clip_provider_id = str(ks_inputs["model"][0])
+    if clip_provider_id and clip_provider_id in workflow:
+        provider_type = str(workflow[clip_provider_id].get("class_type") or "").strip()
+        if provider_type not in ("CheckpointLoaderSimple", "LoraLoader"):
+            clip_provider_id = None
+    if clip_provider_id:
+        for nid in [pos_id, neg_id]:
+            if not nid or nid not in workflow:
+                continue
+            inputs = workflow[nid].get("inputs")
+            if isinstance(inputs, dict) and "clip" in inputs:
+                inputs["clip"] = [clip_provider_id, 1]
 
     if filename_node_id and filename_node_id in workflow:
         workflow[filename_node_id].setdefault("inputs", {})["filename_prefix"] = str(params.get("filename_prefix") or "")
