@@ -8,7 +8,7 @@ export async function criarContextoWhatsapp({ prisma, req, waMessage, ensureUser
   const text = (waMessage.text || '').toString()
   const reply = (waMessage.replyId || '').toString()
   const typed = text.replace(/[!?.]/g, '').trim().toLowerCase()
-  const sendId = waMessage.phoneNumberId || req.params.phoneNumberId
+  const sendId = req.params.phoneNumberId || waMessage.phoneNumberId
   const state = maps?.onboarding?.get(user.id)
   const flow = maps?.upgradeFlow?.get(user.id)
   const billing = maps?.billingFlow?.get(user.id)

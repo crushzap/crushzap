@@ -20,10 +20,10 @@ const payloadObj = {
               display_phone_number: '123456789',
               phone_number_id: PHONE_NUMBER_ID
             },
-            contacts: [{ profile: { name: 'Teste' }, wa_id: '5511999999999' }],
+            contacts: [{ profile: { name: 'Teste' }, wa_id: '5562981773529' }],
             messages: [
               {
-                from: '5511999999999',
+                from: '5562981773529',
                 id: 'wamid.TESTE_' + Date.now(),
                 timestamp: Math.floor(Date.now() / 1000),
                 text: { body: 'Teste Simples' },

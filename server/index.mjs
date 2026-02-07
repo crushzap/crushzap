@@ -27,23 +27,52 @@ const ensureConversation = (userId, personaId) => ensureConversationBase(prisma,
 
 app.use(cors({ origin: true }))
 
-// Logger global para debug (ANTES do express.json para pegar erros de parsing)
 app.use((req, _res, next) => {
-  console.log(`[HTTP] ${req.method} ${req.originalUrl}`)
+  const url = req.originalUrl || req.url
+  const isWebhook = url.startsWith('/api/whatsapp/webhook') || url.startsWith('/api/webhook/whatsapp')
+  if (isWebhook) {
+    const forwardedFor = (req.headers['x-forwarded-for'] || '').toString()
+    const ip = forwardedFor.split(',')[0]?.trim() || req.socket?.remoteAddress || ''
+    const ua = (req.headers['user-agent'] || '').toString()
+    const ct = (req.headers['content-type'] || '').toString()
+    const cl = (req.headers['content-length'] || '').toString()
+    console.log(`[HTTP] ${req.method} ${url} ip=${ip} ua="${ua}" ct="${ct}" cl=${cl}`)
+  } else {
+    console.log(`[HTTP] ${req.method} ${url}`)
+  }
   next()
 })
 
-app.use(express.json())
+const jsonParser = express.json()
+const webhookJsonParser = express.json({
+  verify: (req, _res, buf) => {
+    try {
+      req.rawBody = buf?.toString('utf8') || ''
+    } catch {
+      req.rawBody = ''
+    }
+  }
+})
 
-// Middleware de tratamento de erro para JSON inválido
+app.use((req, res, next) => {
+  const url = req.originalUrl || req.url
+  const isWebhook = url.startsWith('/api/whatsapp/webhook') || url.startsWith('/api/webhook/whatsapp')
+  if (isWebhook) return webhookJsonParser(req, res, next)
+  return jsonParser(req, res, next)
+})
+
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     console.error('[JSON Error]', err.message)
-    // Tentar ler o corpo como texto para debug
-    if (req.body) console.log('[JSON Error Body]', req.body)
+    const raw = (req?.rawBody || '').toString()
+    if (raw) console.error('[JSON Error] rawBody_head', raw.slice(0, 800))
     return res.status(400).send({ error: 'Invalid JSON' })
   }
   next()
+})
+
+app.get('/api/whatsapp/ping', (req, res) => {
+  res.status(200).json({ ok: true })
 })
 app.use(createCoreRouter())
 app.use(createAuthRouter({ prisma }))
