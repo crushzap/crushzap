@@ -9,9 +9,24 @@ import {
   ROUPAS_LISTA,
   SEIOS_LISTA,
 } from './opcoes.mjs'
+import { generateWithGrok } from '../../integrations/grok.mjs'
 
 function norm(v) {
   return (v || '').toString().trim().toLowerCase()
+}
+
+function hashNome(v) {
+  const s = norm(v)
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return h
+}
+
+function pickByName(nome, arr) {
+  const list = Array.isArray(arr) ? arr : []
+  if (!list.length) return ''
+  const idx = hashNome(nome) % list.length
+  return list[idx]
 }
 
 function acharDescricao(lista, escolha) {
@@ -29,12 +44,82 @@ const SIGNIFICADOS_NOMES = {
   maya: 'pode significar “ilusão” (sânscrito) ou “mãe” (hebraico, em algumas interpretações). Um nome curto e marcante.',
 }
 
-export function comentarioNome(nome, { sujeito = 'nome' } = {}) {
+const cacheNomeCrush = new Map()
+
+export function comentarioNomeUsuario(nome) {
   const n = (nome || '').toString().trim()
   if (!n) return ''
   const sig = SIGNIFICADOS_NOMES[norm(n)]
-  if (sig) return `${n} é ${sujeito === 'crush' ? 'perfeito' : 'um belo'} nome… ${sig}`
-  return `${n} é ${sujeito === 'crush' ? 'um nome perfeito' : 'um nome lindo'}. Tem uma energia que fica na memória.`
+  if (sig) return `${n} é um belo nome… ${sig}`
+  return pickByName(n, [
+    `${n}… gostei. Tem presença e eu já consigo imaginar sua Crush falando isso bem pertinho.`,
+    `${n}… perfeito. É curto, marcante e fica fácil de chamar com carinho.`,
+    `${n}… adorei. Tem uma vibe única — do tipo que vira apelido rápido.`,
+    `${n}… bom demais. É o tipo de nome que prende atenção só de ouvir.`,
+  ])
+}
+
+function comentarioNomeCrushDeterministico(nome) {
+  const n = (nome || '').toString().trim()
+  if (!n) return ''
+  const sig = SIGNIFICADOS_NOMES[norm(n)]
+  if (sig) return `${n}… adorei. ${sig} Combina com uma Crush que marca.`
+  return pickByName(n, [
+    `${n}… gostei. Tem uma sonoridade que dá vontade de chamar de novo.`,
+    `${n}… perfeito pra ela. É um nome que chega com presença.`,
+    `${n}… adorei. Parece nome de alguém que vira lembrança fácil.`,
+    `${n}… que escolha boa. É delicado, mas com atitude.`,
+  ])
+}
+
+export async function comentarioNomeCrushAsync(nome) {
+  const n = (nome || '').toString().trim()
+  if (!n) return ''
+  const key = norm(n)
+  const cached = cacheNomeCrush.get(key)
+  if (cached) return cached
+
+  const sig = SIGNIFICADOS_NOMES[key]
+  if (sig) {
+    const out = comentarioNomeCrushDeterministico(n)
+    cacheNomeCrush.set(key, out)
+    return out
+  }
+
+  try {
+    const system = 'Você é a Aura, atendente do CrushZap. Você fala em pt-BR, com tom imersivo e carinhoso.'
+    const user = [
+      'Crie um comentário curto sobre um nome escolhido para a Crush.',
+      '',
+      `Nome da Crush: ${n}`,
+      '',
+      'Regras:',
+      '- 1 ou 2 frases, no máximo 220 caracteres',
+      '- Se você souber com segurança a origem/significado, mencione brevemente',
+      '- Se não tiver certeza, NÃO invente significado; comente só a sonoridade/energia do nome',
+      '- Não mencione IA, robô, modelo, sistema, regras ou “não tenho certeza”',
+      '- Não faça perguntas',
+      '- No máximo 1 emoji',
+    ].join('\n')
+    const gen = await generateWithGrok(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      { useStore: false, timeoutMs: 4500, compact: true }
+    )
+    if (gen?.ok && gen?.content) {
+      const out = gen.content.replace(/\s+/g, ' ').trim().slice(0, 220)
+      if (out) {
+        cacheNomeCrush.set(key, out)
+        return out
+      }
+    }
+  } catch {}
+
+  const fallback = comentarioNomeCrushDeterministico(n)
+  cacheNomeCrush.set(key, fallback)
+  return fallback
 }
 
 export function comentarioPersonalidade(pers) {

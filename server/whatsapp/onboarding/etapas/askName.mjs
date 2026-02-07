@@ -1,5 +1,5 @@
 import { extrairNomeDoTexto, formatarNomePtBr } from '../nome.mjs'
-import { comentarioNome } from '../aura-comentarios.mjs'
+import { comentarioNomeUsuario } from '../aura-comentarios.mjs'
 
 export async function handle(ctx) {
   const { prisma, typed, text, sendId, phone, user, persona, conv, sendWhatsAppText, maps } = ctx
@@ -18,7 +18,7 @@ export async function handle(ctx) {
     return true
   }
 
-  const comment = comentarioNome(nome, { sujeito: 'nome' })
+  const comment = comentarioNomeUsuario(nome)
   const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentUserName', direction: 'out', type: 'text', content: comment, status: 'queued' } })
   const commentRes = await sendWhatsAppText(sendId, phone, comment)
   await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })

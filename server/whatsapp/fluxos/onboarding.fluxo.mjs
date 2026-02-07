@@ -1,5 +1,5 @@
 import { NOMES_SUGERIDOS, PERSONALIDADES_FALLBACK_BOTOES, PERSONALIDADES_LISTA } from '../onboarding/opcoes.mjs'
-import { comentarioNome } from '../onboarding/aura-comentarios.mjs'
+import { comentarioNomeCrushAsync } from '../onboarding/aura-comentarios.mjs'
 import { rotearEtapaOnboarding } from '../onboarding/roteador.mjs'
 
 export async function handleOnboarding(ctx) {
@@ -98,7 +98,7 @@ export async function handleOnboarding(ctx) {
     const chosen = NOMES_SUGERIDOS[Math.floor(Math.random() * NOMES_SUGERIDOS.length)]
     try { await prisma.persona.update({ where: { id: persona.id }, data: { name: chosen } }) } catch {}
     onboarding.set(user.id, { step: 'askPersonality', data: { ...(state?.data || {}), crushName: chosen } })
-    const comment = comentarioNome(chosen, { sujeito: 'crush' })
+    const comment = await comentarioNomeCrushAsync(chosen)
     const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentCrushName', direction: 'out', type: 'text', content: comment, status: 'queued' } })
     const commentRes = await sendWhatsAppText(sendId, phone, comment)
     await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
