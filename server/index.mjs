@@ -39,6 +39,8 @@ app.use(express.json())
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     console.error('[JSON Error]', err.message)
+    // Tentar ler o corpo como texto para debug
+    if (req.body) console.log('[JSON Error Body]', req.body)
     return res.status(400).send({ error: 'Invalid JSON' })
   }
   next()

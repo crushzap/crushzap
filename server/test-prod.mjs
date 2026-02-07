@@ -6,7 +6,8 @@ const DOMAIN = 'crushzap.com.br';
 const PHONE_NUMBER_ID = '1030646366790575';
 const PATH = `/api/whatsapp/webhook/${PHONE_NUMBER_ID}`;
 
-const data = JSON.stringify({
+// Payload menor e mais simples para evitar fragmentação
+const payloadObj = {
   object: 'whatsapp_business_account',
   entry: [
     {
@@ -19,13 +20,13 @@ const data = JSON.stringify({
               display_phone_number: '123456789',
               phone_number_id: PHONE_NUMBER_ID
             },
-            contacts: [{ profile: { name: 'Teste Prod' }, wa_id: '5511999999999' }],
+            contacts: [{ profile: { name: 'Teste' }, wa_id: '5511999999999' }],
             messages: [
               {
                 from: '5511999999999',
-                id: 'wamid.TESTE_PROD_' + Date.now(),
+                id: 'wamid.TESTE_' + Date.now(),
                 timestamp: Math.floor(Date.now() / 1000),
-                text: { body: 'Teste Produção via Script' },
+                text: { body: 'Teste Simples' },
                 type: 'text'
               }
             ]
@@ -35,7 +36,10 @@ const data = JSON.stringify({
       ]
     }
   ]
-});
+};
+
+const data = JSON.stringify(payloadObj);
+const contentLength = Buffer.byteLength(data, 'utf8');
 
 const options = {
   hostname: DOMAIN,
@@ -43,24 +47,24 @@ const options = {
   path: PATH,
   method: 'POST',
   headers: {
-    'Content-Type': 'application/json',
-    'User-Agent': 'FacebookPlatform/WhatsApp', // Simula User-Agent do WhatsApp
-    'Content-Length': data.length
+    'Content-Type': 'application/json; charset=utf-8',
+    'User-Agent': 'FacebookPlatform/WhatsApp',
+    'Content-Length': contentLength,
+    'Connection': 'close'
   }
 };
 
-console.log(`Enviando POST para https://${DOMAIN}${PATH}...`);
+console.log(`Enviando POST (${contentLength} bytes) para https://${DOMAIN}${PATH}...`);
 
 const req = https.request(options, (res) => {
   console.log(`STATUS: ${res.statusCode}`);
   console.log(`HEADERS: ${JSON.stringify(res.headers)}`);
   
   res.setEncoding('utf8');
-  res.on('data', (chunk) => {
-    console.log(`BODY: ${chunk}`);
-  });
+  let responseBody = '';
+  res.on('data', (chunk) => { responseBody += chunk; });
   res.on('end', () => {
-    console.log('Fim da resposta.');
+    console.log(`BODY: ${responseBody}`);
   });
 });
 
@@ -68,5 +72,6 @@ req.on('error', (e) => {
   console.error(`Erro na requisição: ${e.message}`);
 });
 
+// Escrever o corpo da requisição de uma só vez para evitar chunked encoding problemático
 req.write(data);
 req.end();
