@@ -26,13 +26,21 @@ const ensureDefaultPersona = (userId) => ensureDefaultPersonaBase(prisma, userId
 const ensureConversation = (userId, personaId) => ensureConversationBase(prisma, userId, personaId)
 
 app.use(cors({ origin: true }))
+
+// Logger global para debug (ANTES do express.json para pegar erros de parsing)
+app.use((req, _res, next) => {
+  console.log(`[HTTP] ${req.method} ${req.originalUrl}`)
+  next()
+})
+
 app.use(express.json())
 
-// Logger básico para acompanhar chamadas ao webhook do WhatsApp
-app.use('/api/whatsapp/webhook', (req, _res, next) => {
-  try {
-    console.log('[HTTP]', req.method, req.originalUrl)
-  } catch {}
+// Middleware de tratamento de erro para JSON inválido
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.error('[JSON Error]', err.message)
+    return res.status(400).send({ error: 'Invalid JSON' })
+  }
   next()
 })
 app.use(createCoreRouter())
