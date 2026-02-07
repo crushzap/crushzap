@@ -9,10 +9,10 @@ import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
 const PROMPT_MAOS_POSITIVO =
-  'Perfect hand, Detailed hand, detailed perfect hands, five fingers per hand, anatomically correct fingers, no fused fingers, no extra digits, no missing fingers, realistic hand proportions, detailed knuckles and nails, natural hand pose'
+  'Perfect hand, Detailed hand, detailed perfect hands, five fingers per hand, anatomically correct fingers, no fused fingers, no extra digits, no missing fingers, realistic hand proportions, detailed knuckles and nails, natural hand pose, small delicate feminine hands, slender fingers, petite hands, short nails'
 
 const PROMPT_MAOS_NEGATIVO =
-  'deformed hands, mutated fingers, extra fingers, missing fingers, fused fingers, bad anatomy hands, poorly drawn hands, blurry hands, lowres hands, six fingers, three fingers'
+  'deformed hands, mutated fingers, extra fingers, missing fingers, fused fingers, bad anatomy hands, poorly drawn hands, blurry hands, lowres hands, six fingers, three fingers, large hands, big hands, masculine hands, thick fingers'
 
 function promptPedeCloseUp(prompt) {
   const p = String(prompt || '')

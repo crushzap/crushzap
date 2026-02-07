@@ -1,4 +1,5 @@
 import { ETNIA_POR_REPLY } from '../opcoes.mjs'
+import { comentarioEtnia } from '../aura-comentarios.mjs'
 
 export async function handle(ctx) {
   const { prisma, reply, typed, sendId, phone, user, persona, conv, sendWhatsAppText, maps } = ctx
@@ -21,10 +22,14 @@ export async function handle(ctx) {
   if (!eth) return false
 
   onboarding.set(user.id, { step: 'askAge', data: { ...d, ethnicity: eth } })
-  const body = 'Perfeito! Agora me diga a idade que você quer que ela tenha.\n\nDigite um número acima de 18+'
+  const comment = comentarioEtnia(eth)
+  const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentEthnicity', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+  const commentRes = await sendWhatsAppText(sendId, phone, comment)
+  await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+  const body = 'Agora me diz a idade dela.\n\nPrecisa ser *18+*. Digite só o número 👇'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askAge', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppText(sendId, phone, body)
   await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
   return true
 }
-

@@ -1,4 +1,5 @@
 import { CABELOS_LISTA } from '../opcoes.mjs'
+import { comentarioIdade } from '../aura-comentarios.mjs'
 
 export async function handle(ctx) {
   const { prisma, typed, text, sendId, phone, user, persona, conv, sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList, maps } = ctx
@@ -9,15 +10,20 @@ export async function handle(ctx) {
   const d = onboarding.get(user.id)?.data || {}
   const n = parseInt(text.replace(/\D+/g, ''), 10)
   if (!Number.isFinite(n) || n < 18) {
-    const body = 'Digite uma idade válida maior ou igual a 18.'
-    const outMsg = await prisma.message.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, direction: 'out', type: 'text', content: body, status: 'queued' } })
+    const body = 'Preciso que seja 18+.\n\nDigite só um número maior ou igual a 18 👇'
+    const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askAgeInvalid', direction: 'out', type: 'text', content: body, status: 'queued' } })
     const result = await sendWhatsAppText(sendId, phone, body)
-    await prisma.message.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+    await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
     return true
   }
 
   onboarding.set(user.id, { step: 'askHairStyle', data: { ...d, age: n } })
-  const body = 'Agora, qual estilo de cabelo você prefere?'
+  const comment = comentarioIdade(n)
+  const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentAge', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+  const commentRes = await sendWhatsAppText(sendId, phone, comment)
+  await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+  const body = 'Agora vamos escolher o cabelo dela.\n\nQual *estilo* combina mais com a sua Crush?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askHairStyle', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, CABELOS_LISTA, 'Estilo de cabelo', 'Ver opções')
   if (!result.ok) {
@@ -31,4 +37,3 @@ export async function handle(ctx) {
   await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
   return true
 }
-

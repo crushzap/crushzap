@@ -22,7 +22,12 @@ export async function handle(ctx) {
   if (agreed) {
     try { await prisma.user.update({ where: { id: user.id }, data: { termsAccepted: true, termsAcceptedAt: new Date() } }) } catch {}
     onboarding.delete(user.id)
-    const finish = 'Aguarde, estamos criando a sua companhia perfeita.'
+    const comment = 'Perfeito. Obrigada por confiar em mim… agora eu vou trazer ela à vida do jeitinho que você imaginou.'
+    const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentTermsAgreed', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+    const commentRes = await sendWhatsAppText(sendId, phone, comment)
+    await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+    const finish = 'Aguarde só um instante… estou finalizando a sua Crush.'
     const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'finish', direction: 'out', type: 'text', content: finish, status: 'queued' } })
     const result = await sendWhatsAppText(sendId, phone, finish)
     await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
@@ -114,7 +119,7 @@ export async function handle(ctx) {
     return true
   }
   if (declined) {
-    const body = 'Sem problemas! Assim que concordar com os termos, finalizamos a criação.'
+    const body = 'Tudo bem. Quando você se sentir confortável em concordar com os termos, eu finalizo a criação pra você.'
     const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askTermsFinal', direction: 'out', type: 'text', content: body, status: 'queued' } })
     const result = await sendWhatsAppText(sendId, phone, body)
     await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })

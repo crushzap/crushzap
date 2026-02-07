@@ -1,12 +1,11 @@
 export async function handle(ctx) {
-  const { prisma, typed, sendId, phone, user, persona, conv, maps } = ctx
+  const { prisma, reply, typed, sendId, phone, user, persona, conv, maps } = ctx
   const onboarding = maps.onboarding
 
-  if (ctx?.state?.step !== 'askEmail' || !typed) return false
+  if (ctx?.state?.step !== 'askCrushNameChoice' || (!reply && !typed)) return false
 
-  const d = onboarding.get(user.id)?.data || {}
-  onboarding.set(user.id, { step: 'askCrushNameChoice', data: { ...d } })
-  const body = 'Perfeito. Vamos seguir.\n\nAgora vamos dar um nome pra sua Crush. Você prefere escolher o nome ou quer que eu sugira um aleatório agora?'
+  onboarding.set(user.id, { step: 'askCrushNameChoice', data: { ...(ctx?.state?.data || {}) } })
+  const body = 'Só pra eu te guiar direitinho: você quer *digitar o nome* da sua Crush ou prefere um *nome aleatório* agora?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askCrushNameChoice', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await ctx.sendWhatsAppButtons(sendId, phone, body, [
     { id: 'nome_digitar', title: 'DIGITAR NOME' },

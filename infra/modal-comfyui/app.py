@@ -20,11 +20,13 @@ DEFAULT_LOCAL_HANDS_LORA_PATH_WIN = r"E:\APLICATIVOS\projects\aura\comfyui\model
 HANDS_POSITIVE_PROMPT = (
     "Perfect hand, Detailed hand, detailed perfect hands, five fingers per hand, "
     "anatomically correct fingers, no fused fingers, no extra digits, no missing fingers, "
-    "realistic hand proportions, detailed knuckles and nails, natural hand pose"
+    "realistic hand proportions, detailed knuckles and nails, natural hand pose, "
+    "small delicate feminine hands, slender fingers, petite hands, short nails"
 )
 HANDS_NEGATIVE_PROMPT = (
     "deformed hands, mutated fingers, extra fingers, missing fingers, fused fingers, "
-    "bad anatomy hands, poorly drawn hands, blurry hands, lowres hands, six fingers, three fingers"
+    "bad anatomy hands, poorly drawn hands, blurry hands, lowres hands, six fingers, three fingers, "
+    "large hands, big hands, masculine hands, thick fingers"
 )
 
 
@@ -486,6 +488,22 @@ def _find_first_node_id(workflow: dict, class_type: str) -> str | None:
     return None
 
 
+def _pick_best_clip_provider_id(workflow: dict, hands_node_id: str | None) -> str | None:
+    if not hands_node_id:
+        return None
+    for nid, node in workflow.items():
+        if str(nid) == str(hands_node_id):
+            continue
+        if not isinstance(node, dict) or node.get("class_type") != "LoraLoader":
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        if _ref_matches(inputs.get("model"), str(hands_node_id), 0) and _ref_matches(inputs.get("clip"), str(hands_node_id), 1):
+            return str(nid)
+    return str(hands_node_id)
+
+
 def _ensure_hands_lora(workflow: dict, strength: float) -> str | None:
     ckpt_id = _find_first_node_id(workflow, "CheckpointLoaderSimple")
     if not ckpt_id:
@@ -588,6 +606,7 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
     prompt_node_id = _read_env_str("WORKFLOW_PROMPT_NODE_ID", "")
     negative_node_id = _read_env_str("WORKFLOW_NEGATIVE_NODE_ID", "")
     filename_node_id = _read_env_str("WORKFLOW_FILENAME_NODE_ID", "")
+    requested_workflow = str(params.get("workflow") or "").strip().lower()
 
     clip_ids = _pick_clip_text_nodes(workflow)
     pos_id = prompt_node_id if (prompt_node_id and prompt_node_id in workflow) else (clip_ids[0] if clip_ids else "")
@@ -643,23 +662,14 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
             if upstream:
                 _inject_style_lora_after(workflow, str(upstream), extra_lora, 0.8)
 
-    ksampler_id = _find_first_node_id(workflow, "KSampler")
-    clip_provider_id = None
-    if ksampler_id and ksampler_id in workflow:
-        ks_inputs = workflow[ksampler_id].get("inputs")
-        if isinstance(ks_inputs, dict) and isinstance(ks_inputs.get("model"), list) and len(ks_inputs["model"]) == 2:
-            clip_provider_id = str(ks_inputs["model"][0])
-    if clip_provider_id and clip_provider_id in workflow:
-        provider_type = str(workflow[clip_provider_id].get("class_type") or "").strip()
-        if provider_type not in ("CheckpointLoaderSimple", "LoraLoader"):
-            clip_provider_id = None
-    if clip_provider_id:
-        for nid in [pos_id, neg_id]:
-            if not nid or nid not in workflow:
+    best_clip_provider_id = _pick_best_clip_provider_id(workflow, hands_node_id)
+    if best_clip_provider_id:
+        for nid in _pick_clip_text_nodes(workflow):
+            if nid not in workflow:
                 continue
             inputs = workflow[nid].get("inputs")
             if isinstance(inputs, dict) and "clip" in inputs:
-                inputs["clip"] = [clip_provider_id, 1]
+                inputs["clip"] = [best_clip_provider_id, 1]
 
     if filename_node_id and filename_node_id in workflow:
         workflow[filename_node_id].setdefault("inputs", {})["filename_prefix"] = str(params.get("filename_prefix") or "")
@@ -716,6 +726,18 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
                 inputs["denoise"] = float(params.get("denoise"))
             except Exception:
                 pass
+
+        if class_type == "KSampler" and requested_workflow == "pack":
+            if params.get("cfg") is None and "cfg" in inputs:
+                try:
+                    inputs["cfg"] = max(float(inputs.get("cfg") or 0), 6.0)
+                except Exception:
+                    inputs["cfg"] = 6.0
+            if params.get("steps") is None and "steps" in inputs:
+                try:
+                    inputs["steps"] = max(int(inputs.get("steps") or 0), 40)
+                except Exception:
+                    inputs["steps"] = 40
 
     return workflow
 

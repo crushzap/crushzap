@@ -1,7 +1,8 @@
 import { CABELO_POR_REPLY, CORES_CABELO_LISTA } from '../opcoes.mjs'
+import { comentarioCabeloEstilo } from '../aura-comentarios.mjs'
 
 export async function handle(ctx) {
-  const { prisma, reply, typed, text, sendId, phone, user, persona, conv, sendWhatsAppButtons, sendWhatsAppList, maps } = ctx
+  const { prisma, reply, typed, text, sendId, phone, user, persona, conv, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppText, maps } = ctx
   const onboarding = maps.onboarding
 
   if (ctx?.state?.step !== 'askHairStyle' || (!reply && !typed)) return false
@@ -13,7 +14,12 @@ export async function handle(ctx) {
   if (!hs) return false
 
   onboarding.set(user.id, { step: 'askHairColor', data: { ...d, hairStyle: hs } })
-  const body = 'Qual cor de cabelo você prefere?'
+  const comment = comentarioCabeloEstilo(hs)
+  const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentHairStyle', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+  const commentRes = await sendWhatsAppText(sendId, phone, comment)
+  await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+  const body = 'E a cor… qual tom você quer ver nela?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askHairColor', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, CORES_CABELO_LISTA, 'Cor do cabelo', 'Ver opções')
   if (!result.ok) {
@@ -27,4 +33,3 @@ export async function handle(ctx) {
   await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
   return true
 }
-

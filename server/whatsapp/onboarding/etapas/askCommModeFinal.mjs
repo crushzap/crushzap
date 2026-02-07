@@ -1,5 +1,7 @@
+import { comentarioModoResposta } from '../aura-comentarios.mjs'
+
 export async function handle(ctx) {
-  const { prisma, reply, typed, sendId, phone, user, persona, conv, sendWhatsAppButtons, maps } = ctx
+  const { prisma, reply, typed, sendId, phone, user, persona, conv, sendWhatsAppButtons, sendWhatsAppText, maps } = ctx
   const onboarding = maps.onboarding
 
   if (ctx?.state?.step !== 'askCommModeFinal' || (!reply && !typed)) return false
@@ -23,7 +25,12 @@ export async function handle(ctx) {
     })
   } catch {}
   onboarding.set(user.id, { step: 'askTermsFinal', data: { ...d, responseMode: mode } })
-  const bodyTerms = 'Leia e concorde com nossos Termos de Uso para concluir:\nhttps://crushzap.com.br/termos-de-uso\n\nApós ler, confirme abaixo para finalizar a criação.\n\nAo tocar em Li e Concodo, você está concordando com todos os termos descritos em nossos termos de uso, inclusive *declarando que é maior de 18 anos* e que é totalmente responsável pelo acesso ao conteúdo e interações com a CrushZap.\n\n'
+  const comment = comentarioModoResposta(mode)
+  const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentCommMode', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+  const commentRes = await sendWhatsAppText(sendId, phone, comment)
+  await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+  const bodyTerms = 'Tá tudo pronto. Só falta um último “sim”.\n\nLeia e concorde com nossos Termos de Uso:\nhttps://crushzap.com.br/termos-de-uso\n\nAo tocar em *LI E CONCORDO*, você confirma que leu os termos, *declara que é maior de 18 anos* e assume total responsabilidade pelo acesso ao conteúdo e interações com o CrushZap.'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askTermsFinal', direction: 'out', type: 'text', content: bodyTerms, status: 'queued' } })
   const result = await sendWhatsAppButtons(sendId, phone, bodyTerms, [
     { id: 'termos_concordo_final', title: 'LI E CONCORDO' },

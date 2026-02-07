@@ -1,7 +1,8 @@
 import { BUNDAS_LISTA, SEIO_POR_REPLY } from '../opcoes.mjs'
+import { comentarioSeios } from '../aura-comentarios.mjs'
 
 export async function handle(ctx) {
-  const { prisma, reply, typed, text, sendId, phone, user, persona, conv, sendWhatsAppButtons, sendWhatsAppList, maps } = ctx
+  const { prisma, reply, typed, text, sendId, phone, user, persona, conv, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppText, maps } = ctx
   const onboarding = maps.onboarding
 
   if (ctx?.state?.step !== 'askBreastSize' || (!reply && !typed)) return false
@@ -13,7 +14,12 @@ export async function handle(ctx) {
   if (!bs) return false
 
   onboarding.set(user.id, { step: 'askButtSize', data: { ...d, breastSize: bs } })
-  const body = 'Agora me diga o tamanho da bunda que você prefere.'
+  const comment = comentarioSeios(bs)
+  const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentBreastSize', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+  const commentRes = await sendWhatsAppText(sendId, phone, comment)
+  await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+  const body = 'E agora… qual tamanho de bunda você prefere?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askButtSize', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, BUNDAS_LISTA, 'Tamanho da bunda', 'Ver opções')
   if (!result.ok) {
@@ -27,4 +33,3 @@ export async function handle(ctx) {
   await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
   return true
 }
-

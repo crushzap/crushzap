@@ -1,7 +1,8 @@
 import { PROFISSAO_POR_REPLY, ROUPAS_LISTA } from '../opcoes.mjs'
+import { comentarioProfissao } from '../aura-comentarios.mjs'
 
 export async function handle(ctx) {
-  const { prisma, reply, typed, text, sendId, phone, user, persona, conv, sendWhatsAppButtons, sendWhatsAppList, maps } = ctx
+  const { prisma, reply, typed, text, sendId, phone, user, persona, conv, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppText, maps } = ctx
   const onboarding = maps.onboarding
 
   if (ctx?.state?.step !== 'askOccupation' || (!reply && !typed)) return false
@@ -13,7 +14,12 @@ export async function handle(ctx) {
   if (!job) return false
 
   onboarding.set(user.id, { step: 'askClothing', data: { ...d, occupation: job } })
-  const body = 'E o estilo de roupa? Escolha uma opção:'
+  const comment = comentarioProfissao(job)
+  const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentOccupation', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+  const commentRes = await sendWhatsAppText(sendId, phone, comment)
+  await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+  const body = 'E o estilo… como você quer ver ela vestida?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askClothing', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, ROUPAS_LISTA, 'Estilo de roupa', 'Ver opções')
   if (!result.ok) {
@@ -27,4 +33,3 @@ export async function handle(ctx) {
   await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
   return true
 }
-

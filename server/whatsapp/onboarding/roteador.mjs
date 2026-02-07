@@ -2,6 +2,7 @@ import { handle as handleAskName } from './etapas/askName.mjs'
 import { handle as handleConfirmName } from './etapas/confirmName.mjs'
 import { handle as handleAskEmail } from './etapas/askEmail.mjs'
 import { handle as handleConfirmEmail } from './etapas/confirmEmail.mjs'
+import { handle as handleAskCrushNameChoice } from './etapas/askCrushNameChoice.mjs'
 import { handle as handleAskCrushNameInput } from './etapas/askCrushNameInput.mjs'
 import { handle as handleAskPersonality } from './etapas/askPersonality.mjs'
 import { handle as handleAskEthnicity } from './etapas/askEthnicity.mjs'
@@ -24,6 +25,7 @@ export async function rotearEtapaOnboarding(ctx) {
   if (step === 'confirmName') return handleConfirmName(ctx)
   if (step === 'askEmail') return handleAskEmail(ctx)
   if (step === 'confirmEmail') return handleConfirmEmail(ctx)
+  if (step === 'askCrushNameChoice') return handleAskCrushNameChoice(ctx)
   if (step === 'askCrushNameInput') return handleAskCrushNameInput(ctx)
   if (step === 'askPersonality') return handleAskPersonality(ctx)
   if (step === 'askEthnicity') return handleAskEthnicity(ctx)
@@ -40,4 +42,3 @@ export async function rotearEtapaOnboarding(ctx) {
 
   return false
 }
-

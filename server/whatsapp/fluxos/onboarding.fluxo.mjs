@@ -1,4 +1,5 @@
 import { NOMES_SUGERIDOS, PERSONALIDADES_FALLBACK_BOTOES, PERSONALIDADES_LISTA } from '../onboarding/opcoes.mjs'
+import { comentarioNome } from '../onboarding/aura-comentarios.mjs'
 import { rotearEtapaOnboarding } from '../onboarding/roteador.mjs'
 
 export async function handleOnboarding(ctx) {
@@ -8,7 +9,12 @@ export async function handleOnboarding(ctx) {
   if (reply === 'vamos_sim' || typed === 'vamos sim') {
     if (personaReady || state) return true
     onboarding.set(user.id, { step: 'askName', data: {} })
-    const body = 'Perfeito! Vamos começar então. Primeiro me diz, qual o seu nome ou como prefere ser chamado pela sua crush?\n\nDigite abaixo 👇'
+    const startComment = 'Aí sim… vem comigo. A gente vai criar uma Crush com a sua cara.'
+    const outStart = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentStart', direction: 'out', type: 'text', content: startComment, status: 'queued' } })
+    const startRes = await sendWhatsAppText(sendId, phone, startComment)
+    await prisma.onboardingMessage.update({ where: { id: outStart.id }, data: { status: startRes.ok ? 'sent' : 'failed' } })
+
+    const body = 'Perfeito… vamos começar.\n\nComo você quer que a sua Crush te chame? Pode ser seu nome, um apelido, do jeitinho que você gosta.\n\nDigite aqui embaixo 👇'
     const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askName', direction: 'out', type: 'text', content: body, status: 'queued' } })
     const result = await sendWhatsAppText(sendId, phone, body)
     await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
@@ -76,7 +82,12 @@ export async function handleOnboarding(ctx) {
 
   if (reply === 'nome_digitar' || typed === 'digitar nome') {
     onboarding.set(user.id, { step: 'askCrushNameInput', data: { ...(state?.data || {}) } })
-    const body = 'Digite o nome da sua Crush 👇'
+    const comment = 'Amo quando você escolhe o nome com intenção… isso deixa tudo mais especial.'
+    const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentCrushNameChoice', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+    const commentRes = await sendWhatsAppText(sendId, phone, comment)
+    await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+    const body = 'Me conta: qual vai ser o nome dela? Digite do jeitinho que você quer que eu chame. 👇'
     const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askCrushNameInput', direction: 'out', type: 'text', content: body, status: 'queued' } })
     const result = await sendWhatsAppText(sendId, phone, body)
     await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
@@ -87,7 +98,12 @@ export async function handleOnboarding(ctx) {
     const chosen = NOMES_SUGERIDOS[Math.floor(Math.random() * NOMES_SUGERIDOS.length)]
     try { await prisma.persona.update({ where: { id: persona.id }, data: { name: chosen } }) } catch {}
     onboarding.set(user.id, { step: 'askPersonality', data: { ...(state?.data || {}), crushName: chosen } })
-    const body = 'Agora vamos criar sua crush perfeita. Para começar vamos dar uma personalidade própria para ela.\n\nEscolha uma das opções abaixo:'
+    const comment = comentarioNome(chosen, { sujeito: 'crush' })
+    const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentCrushName', direction: 'out', type: 'text', content: comment, status: 'queued' } })
+    const commentRes = await sendWhatsAppText(sendId, phone, comment)
+    await prisma.onboardingMessage.update({ where: { id: outComment.id }, data: { status: commentRes.ok ? 'sent' : 'failed' } })
+
+    const body = 'Agora vamos dar vida a ela.\n\nQue *personalidade* combina mais com a sua Crush?'
     const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askPersonality', direction: 'out', type: 'text', content: body, status: 'queued' } })
     const result = await sendWhatsAppList(sendId, phone, body, PERSONALIDADES_LISTA, 'Personalidades', 'Ver opções')
     if (!result.ok) {
