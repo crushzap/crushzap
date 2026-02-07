@@ -2,11 +2,11 @@ export const NOMES_SUGERIDOS = ['Luna', 'Valentina', 'Melissa', 'Aurora', 'Maya'
 
 export const PERSONALIDADES_LISTA = [
   { id: 'pers_ninfomaniaca', title: 'Ninfomaníaca', description: 'Sensual, provocante e intensa' },
-  { id: 'pers_submissa', title: 'Submissa', description: 'Gentil, receptiva e dócil' },
-  { id: 'pers_sedutora', title: 'Sedutora', description: 'Envolvente, irresistível e charmosa' },
+  { id: 'pers_submissa', title: 'Submissa', description: 'Receptiva, obediente e BDSM' },
+  { id: 'pers_sedutora', title: 'Sedutora', description: 'Charmosa, insinuante e não tão explícita' },
+  { id: 'pers_dominante', title: 'Dominante', description: 'Dominatrix, BDSM, firme e conduz' },
   { id: 'pers_cuidadora', title: 'Cuidadora', description: 'Acolhedora, protetora e atenciosa' },
   { id: 'pers_apaixonada', title: 'Apaixonada', description: 'Romântica, afetuosa e leal' },
-  { id: 'pers_dominante', title: 'Dominante', description: 'Confiante, direta, toma a iniciativa' },
   { id: 'pers_sabia', title: 'Sábia', description: 'Madura, calma e profunda' },
   { id: 'pers_inocente', title: 'Inocente', description: 'Doce, pura e delicada' },
   { id: 'pers_brincalhona', title: 'Brincalhona', description: 'Bem-humorada, divertida e leve' },
@@ -15,6 +15,7 @@ export const PERSONALIDADES_LISTA = [
 
 export const PERSONALIDADES_FALLBACK_BOTOES = [
   { id: 'pers_ninfomaniaca', title: 'Ninfomaníaca' },
+  { id: 'pers_sedutora', title: 'Sedutora' },
   { id: 'pers_dominante', title: 'Dominante' },
   { id: 'pers_brincalhona', title: 'Brincalhona' },
 ]
@@ -185,4 +186,3 @@ export const ROUPA_POR_REPLY = {
   roupa_secretaria: 'Secretária',
   roupa_couro: 'Couro',
 }
-

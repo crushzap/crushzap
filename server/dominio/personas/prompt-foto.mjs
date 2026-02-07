@@ -173,7 +173,9 @@ export function buildPromptFotoPersona({ personaName, personaPrompt }) {
   const name = (personaName || 'Crush').toString().trim()
   const p = (personaPrompt || '').toString()
 
-  const personality = extrairMatch(p, /Sua personalidade é\s+(.+?)\s+—/i)
+  const personality =
+    extrairMatch(p, /Personalidade escolhida\s*\(obrigat[óo]rio seguir\):\s*([^.]+)\./i) ||
+    extrairMatch(p, /Sua personalidade é\s+(.+?)\s+—/i)
   const appearance = getPersonaPhysicalTraits(p)
   const outfit = extrairMatch(p, /Estilo de roupa:\s+(.+?)\s+—/i)
 
