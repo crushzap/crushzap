@@ -231,6 +231,7 @@ export async function sendWhatsAppImageSmart(phoneNumberId, to, imageUrl, captio
   const uploadFirst = parseBoolEnv(process.env.WHATSAPP_IMAGE_UPLOAD_FIRST)
   const uploadFallback = parseBoolEnv(process.env.WHATSAPP_IMAGE_UPLOAD_FALLBACK)
   const enableUpload = parseBoolEnv(process.env.WHATSAPP_ENABLE_MEDIA_UPLOAD) || uploadFirst || uploadFallback
+  console.log('[WhatsApp][Image] send start', { to, uploadFirst, uploadFallback, enableUpload })
   if (uploadFirst && enableUpload) {
     const up = await uploadWhatsAppMediaFromUrl(phoneNumberId, imageUrl)
     const mediaId = up?.data?.id
