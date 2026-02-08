@@ -25,9 +25,10 @@ export async function handle(ctx) {
   const bt = (d.bodyType || '').toString()
   const bs = (d.breastSize || '').toString()
   const bs2 = (d.buttSize || '').toString()
+  const sexualPreference = (d.sexualPreference || '').toString()
   const job = (d.occupation || '').toString()
   const outfit = cloth
-  const ptxt = buildPersonaPrompt({ cName, pers, eth, age, hs, hc, bt, bs, bs2, job, outfit, uName, uEmail })
+  const ptxt = buildPersonaPrompt({ cName, pers, eth, age, hs, hc, bt, bs, bs2, sexualPreference, job, outfit, uName, uEmail })
   try { await prisma.persona.update({ where: { id: persona.id }, data: { prompt: ptxt } }) } catch {}
   onboarding.set(user.id, { step: 'askCommModeFinal', data: { ...d, outfit } })
   const comment = comentarioRoupa(outfit)

@@ -4,6 +4,7 @@ import {
   CORES_CABELO_LISTA,
   CORPOS_LISTA,
   ETNIAS_LISTA,
+  ORIENTACOES_SEXUAIS_LISTA,
   PERSONALIDADES_LISTA,
   PROFISSOES_LISTA,
   ROUPAS_LISTA,
@@ -190,6 +191,14 @@ export function comentarioProfissao(job) {
   const desc = acharDescricao(PROFISSOES_LISTA, j)
   if (desc) return `${j}… adorei. ${desc}.`
   return `${j}… adorei. Isso dá personalidade pra história dela.`
+}
+
+export function comentarioOrientacaoSexual(pref) {
+  const p = (pref || '').toString().trim()
+  if (!p) return ''
+  const desc = acharDescricao(ORIENTACOES_SEXUAIS_LISTA, p)
+  if (desc) return `${p}… entendi. ${desc}.`
+  return `${p}… entendi. Vou deixar isso bem alinhado na personalidade dela.`
 }
 
 export function comentarioRoupa(outfit) {

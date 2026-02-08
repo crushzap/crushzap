@@ -12,6 +12,7 @@ import { handle as handleAskHairColor } from './etapas/askHairColor.mjs'
 import { handle as handleAskBodyType } from './etapas/askBodyType.mjs'
 import { handle as handleAskBreastSize } from './etapas/askBreastSize.mjs'
 import { handle as handleAskButtSize } from './etapas/askButtSize.mjs'
+import { handle as handleAskSexualPreference } from './etapas/askSexualPreference.mjs'
 import { handle as handleAskOccupation } from './etapas/askOccupation.mjs'
 import { handle as handleAskClothing } from './etapas/askClothing.mjs'
 import { handle as handleAskCommModeFinal } from './etapas/askCommModeFinal.mjs'
@@ -35,6 +36,7 @@ export async function rotearEtapaOnboarding(ctx) {
   if (step === 'askBodyType') return handleAskBodyType(ctx)
   if (step === 'askBreastSize') return handleAskBreastSize(ctx)
   if (step === 'askButtSize') return handleAskButtSize(ctx)
+  if (step === 'askSexualPreference') return handleAskSexualPreference(ctx)
   if (step === 'askOccupation') return handleAskOccupation(ctx)
   if (step === 'askClothing') return handleAskClothing(ctx)
   if (step === 'askCommModeFinal') return handleAskCommModeFinal(ctx)

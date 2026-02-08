@@ -72,6 +72,9 @@ image = (
         "rm -rf /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Pack || true",
         "cd /root/comfy/ComfyUI/custom_nodes && git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git",
         "test -f /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Pack/requirements.txt && python -m pip install -r /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Pack/requirements.txt || true",
+        "rm -rf /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Subpack || true",
+        "cd /root/comfy/ComfyUI/custom_nodes && git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git",
+        "test -f /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Subpack/requirements.txt && python -m pip install -r /root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Subpack/requirements.txt || true",
         "python -m pip install ultralytics",
     )
 )
@@ -461,6 +464,193 @@ def _pick_clip_text_nodes(workflow: dict) -> list[str]:
     return ids
 
 
+def _node_required_inputs(object_info: dict, class_type: str) -> dict:
+    try:
+        required = (object_info.get(class_type) or {}).get("input", {}).get("required", {})
+        return required if isinstance(required, dict) else {}
+    except Exception:
+        return {}
+
+
+def _node_outputs(object_info: dict, class_type: str) -> list[str]:
+    try:
+        outputs = (object_info.get(class_type) or {}).get("output", [])
+        if isinstance(outputs, list):
+            return [str(x) for x in outputs]
+    except Exception:
+        pass
+    return []
+
+
+def _pick_node_type_by_predicate(object_info: dict, predicate) -> str | None:
+    if not isinstance(object_info, dict) or not object_info:
+        return None
+    for k, v in object_info.items():
+        try:
+            if not isinstance(k, str) or not isinstance(v, dict):
+                continue
+            if predicate(k, v):
+                return k
+        except Exception:
+            continue
+    return None
+
+
+def _pick_choice_ending_with(object_info: dict, class_type: str, input_name: str, suffix: str) -> str | None:
+    try:
+        spec = _node_required_inputs(object_info, class_type).get(input_name)
+        if not isinstance(spec, list) or len(spec) < 2:
+            return None
+        meta = spec[1]
+        if not isinstance(meta, dict):
+            return None
+        choices = meta.get("choices")
+        if not isinstance(choices, list):
+            return None
+        suf = str(suffix).lower()
+        for c in choices:
+            cs = str(c)
+            if cs.lower().endswith(suf):
+                return cs
+        return None
+    except Exception:
+        return None
+
+
+def _read_workflow_prompt_text(workflow: dict) -> str:
+    try:
+        ids = _pick_clip_text_nodes(workflow)
+        if not ids:
+            return ""
+        node = workflow.get(ids[0]) or {}
+        inputs = node.get("inputs") if isinstance(node, dict) else {}
+        return str((inputs or {}).get("text") or "")
+    except Exception:
+        return ""
+
+
+def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> dict:
+    if not isinstance(object_info, dict) or not object_info:
+        return workflow
+    disable = str(params.get("disable_hand_detailer") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+    if disable:
+        return workflow
+    if _read_env_str("DISABLE_HAND_DETAILER", "").strip().lower() in ("1", "true", "yes", "y", "on"):
+        return workflow
+
+    requested_workflow = str(params.get("workflow") or "").strip().lower()
+    prompt_text = _read_workflow_prompt_text(workflow).lower()
+    always = _read_env_str("HANDS_DETAILER_ALWAYS", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+    should = always or requested_workflow in ("pack",) or ("hand" in prompt_text) or ("hands" in prompt_text)
+    if not should:
+        return workflow
+
+    vae_decode_id = _find_first_node_id(workflow, "VAEDecode")
+    save_id = _find_first_node_id(workflow, "SaveImage")
+    if not vae_decode_id or not save_id:
+        return workflow
+    base_image_ref = [vae_decode_id, 0]
+
+    provider_type = "UltralyticsDetectorProvider" if "UltralyticsDetectorProvider" in object_info else None
+    if not provider_type:
+        provider_type = _pick_node_type_by_predicate(object_info, lambda k, v: "ultralyticsdetectorprovider" in k.lower())
+    if not provider_type:
+        return workflow
+
+    provider_id = _next_numeric_node_id(workflow)
+    model_choice = _pick_choice_ending_with(object_info, provider_type, "model_name", "hand_yolo8n.pt") or "bbox/hand_yolo8n.pt"
+    workflow[provider_id] = {"inputs": {"model_name": model_choice}, "class_type": provider_type}
+    provider_outputs = _node_outputs(object_info, provider_type)
+    bbox_out_idx = 0
+    for i, t in enumerate(provider_outputs):
+        if str(t).upper() == "BBOX_DETECTOR":
+            bbox_out_idx = i
+            break
+
+    bbox_segs_type = _pick_node_type_by_predicate(
+        object_info,
+        lambda k, v: (
+            "bbox" in k.lower()
+            and "segs" in k.lower()
+            and "segs" in [str(x).upper() for x in (v.get("output") or [])]
+            and isinstance((v.get("input") or {}).get("required", {}), dict)
+        ),
+    )
+    if not bbox_segs_type:
+        return workflow
+
+    bbox_segs_id = _next_numeric_node_id(workflow)
+    bbox_req = _node_required_inputs(object_info, bbox_segs_type)
+    bbox_inputs: dict = {}
+    if "image" in bbox_req:
+        bbox_inputs["image"] = base_image_ref
+    if "bbox_detector" in bbox_req:
+        bbox_inputs["bbox_detector"] = [provider_id, bbox_out_idx]
+    for k, v in {"threshold": 0.25, "dilation": 4, "crop_factor": 1.2, "drop_size": 10, "labels": "hand"}.items():
+        if k in bbox_req:
+            bbox_inputs[k] = v
+    workflow[bbox_segs_id] = {"inputs": bbox_inputs, "class_type": bbox_segs_type}
+    bbox_segs_outputs = _node_outputs(object_info, bbox_segs_type)
+    segs_out_idx = 0
+    for i, t in enumerate(bbox_segs_outputs):
+        if str(t).upper() == "SEGS":
+            segs_out_idx = i
+            break
+
+    detailer_type = _pick_node_type_by_predicate(
+        object_info,
+        lambda k, v: (
+            "detailer" in k.lower()
+            and "segs" in k.lower()
+            and "image" in [str(x).upper() for x in (v.get("output") or [])]
+            and isinstance((v.get("input") or {}).get("required", {}), dict)
+        ),
+    )
+    if not detailer_type:
+        return workflow
+
+    detailer_id = _next_numeric_node_id(workflow)
+    detailer_req = _node_required_inputs(object_info, detailer_type)
+    if any(k in detailer_req for k in ("detailer_pipe", "basic_pipe", "pipe")):
+        return workflow
+
+    detailer_inputs: dict = {}
+    if "image" in detailer_req:
+        detailer_inputs["image"] = base_image_ref
+    if "segs" in detailer_req:
+        detailer_inputs["segs"] = [bbox_segs_id, segs_out_idx]
+    if "guide_size" in detailer_req:
+        detailer_inputs["guide_size"] = 384.0
+    if "max_size" in detailer_req:
+        detailer_inputs["max_size"] = 1024.0
+    if "steps" in detailer_req:
+        detailer_inputs["steps"] = 20
+    if "cfg" in detailer_req:
+        detailer_inputs["cfg"] = 6.0
+    if "sampler_name" in detailer_req:
+        detailer_inputs["sampler_name"] = "dpmpp_2m_sde"
+    if "scheduler" in detailer_req:
+        detailer_inputs["scheduler"] = "karras"
+    if "denoise" in detailer_req:
+        try:
+            detailer_inputs["denoise"] = float(_read_env_str("HANDS_DETAILER_DENOISE", "0.55"))
+        except Exception:
+            detailer_inputs["denoise"] = 0.55
+
+    workflow[detailer_id] = {"inputs": detailer_inputs, "class_type": detailer_type}
+    detailer_outputs = _node_outputs(object_info, detailer_type)
+    img_out_idx = 0
+    for i, t in enumerate(detailer_outputs):
+        if str(t).upper() == "IMAGE":
+            img_out_idx = i
+            break
+
+    save_inputs = workflow.get(save_id, {}).get("inputs")
+    if isinstance(save_inputs, dict) and save_inputs.get("images") == base_image_ref:
+        save_inputs["images"] = [detailer_id, img_out_idx]
+    return workflow
+
+
 def _ref_matches(v: object, node_id: str, output_index: int) -> bool:
     if not isinstance(v, list) or len(v) != 2:
         return False
@@ -754,6 +944,7 @@ class ComfyUIService:
     port: int = _read_env_int("COMFYUI_PORT", 8188)
     _log_path: str = "/tmp/comfyui-server.log"
     _log_file = None
+    _object_info: dict = {}
 
     @modal.enter()
     def start(self):
@@ -772,6 +963,20 @@ class ComfyUIService:
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/system_stats", timeout=5)
                 if r.status_code == 200:
+                    try:
+                        oi = requests.get(f"http://127.0.0.1:{self.port}/object_info", timeout=30)
+                        if oi.status_code == 200:
+                            parsed = oi.json()
+                            self._object_info = parsed if isinstance(parsed, dict) else {}
+                            print(
+                                "[ComfyUI] object_info_loaded",
+                                {
+                                    "node_count": len(self._object_info),
+                                    "has_ultralytics": "UltralyticsDetectorProvider" in self._object_info,
+                                },
+                            )
+                    except Exception:
+                        self._object_info = {}
                     return
             except Exception:
                 pass
@@ -1091,6 +1296,8 @@ class ComfyUIService:
                 workflow[ksampler_id].setdefault("inputs", {})["latent_image"] = [empty_latent_id, 0]
                 if "denoise" in workflow[ksampler_id].get("inputs", {}):
                     workflow[ksampler_id]["inputs"]["denoise"] = 1
+
+        workflow = _inject_hands_detailer(workflow, params, getattr(self, "_object_info", {}) or {})
 
         temp_workflow = f"/tmp/{client_id}.json"
         Path(temp_workflow).write_text(json.dumps(workflow), encoding="utf-8")

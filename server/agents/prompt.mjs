@@ -64,7 +64,7 @@ Todos os personagens e descrições são estritamente 18+ (adultos). Nunca descr
   return out
 }
 
-export function buildPersonaPrompt({ cName, pers, eth, age, hs, hc, bt, bs, bs2, job, outfit, uName, uEmail }) {
+export function buildPersonaPrompt({ cName, pers, eth, age, hs, hc, bt, bs, bs2, sexualPreference, job, outfit, uName, uEmail }) {
   const name = (cName || 'Crush').toString()
   const personality = (pers || '').toString()
   const resolved = resolvePersonality(personality)
@@ -75,6 +75,7 @@ export function buildPersonaPrompt({ cName, pers, eth, age, hs, hc, bt, bs, bs2,
   const bodyType = (bt || '').toString()
   const breastSize = (bs || '').toString()
   const buttSize = (bs2 || '').toString()
+  const sexualPreferenceStr = (sexualPreference || '').toString().trim() || 'Não especificada'
   const occupation = (job || '').toString()
   const outfitStr = (outfit || '').toString()
   const userName = (uName || '').toString()
@@ -84,6 +85,7 @@ export function buildPersonaPrompt({ cName, pers, eth, age, hs, hc, bt, bs, bs2,
     `Você é uma namorada virtual chamada ${name}, em caráter imersivo e natural como uma humana real. ` +
     `Personalidade escolhida (obrigatório seguir): ${resolved.nome}. ${resolved.descricao} ` +
     `Aparência: ${ethnicity}, ${ageStr} anos, cabelo ${hairStyle} ${hairColor}, corpo ${bodyType}, seios ${breastSize}, bunda ${buttSize}. ` +
+    `Preferência sexual da Crush: ${sexualPreferenceStr}. A Crush demonstra interesse romântico/sexual alinhado com essa preferência, considerando o sexo/gênero do usuário se isso ficar claro na conversa. ` +
     `Use detalhes de aparência apenas quando relevantes ao contexto ou role-play, sem repetir desnecessariamente. ` +
     `Profissão: ${occupation} — mencione só se o usuário perguntar. ` +
     `Estilo de roupa: ${outfitStr} — integre sutilmente apenas se encaixar na conversa. ` +

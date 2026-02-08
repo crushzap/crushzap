@@ -135,6 +135,30 @@ export const BUNDA_POR_REPLY = {
   bunda_muito_grande: 'Muito grande',
 }
 
+export const ORIENTACOES_SEXUAIS_LISTA = [
+  { id: 'orientacao_hetero', title: 'Hétero', description: 'Se relaciona apenas com sexo oposto' },
+  { id: 'orientacao_hetero_curiosa', title: 'Hétero curiosa', description: 'Se relaciona com sexo oposto, mas tem curiosidade de experimentar o mesmo sexo' },
+  { id: 'orientacao_bissexual', title: 'Bissexual', description: 'Se relaciona com ambos os sexos' },
+  { id: 'orientacao_homossexual', title: 'Homossexual', description: 'Se relaciona apenas com o mesmo sexo' },
+  { id: 'orientacao_pansexual', title: 'Pansexual', description: 'Atração por pessoas independentemente do sexo' },
+  { id: 'orientacao_assexual', title: 'Assexual', description: 'Pouco ou nenhum interesse sexual (mais foco em conexão/romance)' },
+]
+
+export const ORIENTACOES_SEXUAIS_FALLBACK_BOTOES = [
+  { id: 'orientacao_hetero', title: 'Hétero' },
+  { id: 'orientacao_bissexual', title: 'Bissexual' },
+  { id: 'orientacao_homossexual', title: 'Homossexual' },
+]
+
+export const ORIENTACAO_SEXUAL_POR_REPLY = {
+  orientacao_hetero: 'Hétero',
+  orientacao_hetero_curiosa: 'Hétero curiosa',
+  orientacao_bissexual: 'Bissexual',
+  orientacao_homossexual: 'Homossexual',
+  orientacao_pansexual: 'Pansexual',
+  orientacao_assexual: 'Assexual',
+}
+
 export const PROFISSOES_LISTA = [
   { id: 'profissao_dentista', title: 'Dentista', description: 'Cuida do seu sorriso' },
   { id: 'profissao_modelo', title: 'Modelo', description: 'Elegante e estilosa' },
