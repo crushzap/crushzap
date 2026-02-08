@@ -555,6 +555,7 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
     if not provider_type:
         provider_type = _pick_node_type_by_predicate(object_info, lambda k, v: "ultralyticsdetectorprovider" in k.lower())
     if not provider_type:
+        print("[HandsDetailer] skipped (no UltralyticsDetectorProvider)")
         return workflow
 
     provider_id = _next_numeric_node_id(workflow)
@@ -577,16 +578,41 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         ),
     )
     if not bbox_segs_type:
+        print("[HandsDetailer] skipped (no bbox->segs node)")
         return workflow
 
     bbox_segs_id = _next_numeric_node_id(workflow)
     bbox_req = _node_required_inputs(object_info, bbox_segs_type)
     bbox_inputs: dict = {}
-    if "image" in bbox_req:
-        bbox_inputs["image"] = base_image_ref
-    if "bbox_detector" in bbox_req:
-        bbox_inputs["bbox_detector"] = [provider_id, bbox_out_idx]
-    for k, v in {"threshold": 0.25, "dilation": 4, "crop_factor": 1.2, "drop_size": 10, "labels": "hand"}.items():
+    image_key = "image" if "image" in bbox_req else None
+    det_key = None
+    for cand in ("bbox_detector", "detector", "bbox", "BBOX_DETECTOR"):
+        if cand in bbox_req:
+            det_key = cand
+            break
+    if image_key:
+        bbox_inputs[image_key] = base_image_ref
+    if det_key:
+        bbox_inputs[det_key] = [provider_id, bbox_out_idx]
+
+    try:
+        thr = float(_read_env_str("HANDS_DETECT_THRESHOLD", "0.40"))
+    except Exception:
+        thr = 0.40
+    try:
+        dilation = int(_read_env_int("HANDS_DETECT_DILATION", 3))
+    except Exception:
+        dilation = 3
+    try:
+        crop_factor = float(_read_env_str("HANDS_DETECT_CROP_FACTOR", "1.35"))
+    except Exception:
+        crop_factor = 1.35
+    try:
+        drop_size = int(_read_env_int("HANDS_DETECT_DROP_SIZE", 5))
+    except Exception:
+        drop_size = 5
+
+    for k, v in {"threshold": thr, "dilation": dilation, "crop_factor": crop_factor, "drop_size": drop_size, "labels": "hand"}.items():
         if k in bbox_req:
             bbox_inputs[k] = v
     workflow[bbox_segs_id] = {"inputs": bbox_inputs, "class_type": bbox_segs_type}
@@ -607,12 +633,16 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         ),
     )
     if not detailer_type:
+        print("[HandsDetailer] skipped (no detailer segs node)")
         return workflow
 
     detailer_id = _next_numeric_node_id(workflow)
     detailer_req = _node_required_inputs(object_info, detailer_type)
-    if any(k in detailer_req for k in ("detailer_pipe", "basic_pipe", "pipe")):
-        return workflow
+    pipe_key = None
+    for k in detailer_req.keys():
+        if "pipe" in str(k).lower():
+            pipe_key = str(k)
+            break
 
     detailer_inputs: dict = {}
     if "image" in detailer_req:
@@ -624,18 +654,72 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
     if "max_size" in detailer_req:
         detailer_inputs["max_size"] = 1024.0
     if "steps" in detailer_req:
-        detailer_inputs["steps"] = 20
+        try:
+            detailer_inputs["steps"] = int(_read_env_int("HANDS_DETAILER_STEPS", 28))
+        except Exception:
+            detailer_inputs["steps"] = 28
     if "cfg" in detailer_req:
-        detailer_inputs["cfg"] = 6.0
+        try:
+            detailer_inputs["cfg"] = float(_read_env_str("HANDS_DETAILER_CFG", "7.0"))
+        except Exception:
+            detailer_inputs["cfg"] = 7.0
     if "sampler_name" in detailer_req:
         detailer_inputs["sampler_name"] = "dpmpp_2m_sde"
     if "scheduler" in detailer_req:
         detailer_inputs["scheduler"] = "karras"
     if "denoise" in detailer_req:
         try:
-            detailer_inputs["denoise"] = float(_read_env_str("HANDS_DETAILER_DENOISE", "0.55"))
+            detailer_inputs["denoise"] = float(_read_env_str("HANDS_DETAILER_DENOISE", "0.48"))
         except Exception:
-            detailer_inputs["denoise"] = 0.55
+            detailer_inputs["denoise"] = 0.48
+
+    if pipe_key:
+        pipe_output_kind = "DETAILER_PIPE"
+        pipe_builder_type = _pick_node_type_by_predicate(
+            object_info,
+            lambda k, v: (
+                pipe_output_kind in [str(x).upper() for x in (v.get("output") or [])]
+                and isinstance((v.get("input") or {}).get("required", {}), dict)
+            ),
+        )
+        if not pipe_builder_type:
+            print("[HandsDetailer] skipped (detailer needs pipe; no pipe builder)", {"detailer": detailer_type, "pipe_key": pipe_key})
+            return workflow
+
+        ksampler_id = _find_first_node_id(workflow, "KSampler")
+        ks_inputs = (workflow.get(ksampler_id) or {}).get("inputs") if ksampler_id else {}
+        vae_inputs = (workflow.get(vae_decode_id) or {}).get("inputs") if vae_decode_id else {}
+        clip_ids = _pick_clip_text_nodes(workflow)
+        clip_ref = None
+        if clip_ids:
+            ci = workflow.get(clip_ids[0]) or {}
+            cin = ci.get("inputs") if isinstance(ci, dict) else {}
+            if isinstance(cin, dict) and isinstance(cin.get("clip"), list):
+                clip_ref = cin.get("clip")
+
+        pipe_req = _node_required_inputs(object_info, pipe_builder_type)
+        pipe_inputs: dict = {}
+        if isinstance(ks_inputs, dict):
+            if "model" in pipe_req and isinstance(ks_inputs.get("model"), list):
+                pipe_inputs["model"] = ks_inputs.get("model")
+            if "positive" in pipe_req and isinstance(ks_inputs.get("positive"), list):
+                pipe_inputs["positive"] = ks_inputs.get("positive")
+            if "negative" in pipe_req and isinstance(ks_inputs.get("negative"), list):
+                pipe_inputs["negative"] = ks_inputs.get("negative")
+        if isinstance(vae_inputs, dict):
+            if "vae" in pipe_req and isinstance(vae_inputs.get("vae"), list):
+                pipe_inputs["vae"] = vae_inputs.get("vae")
+        if "clip" in pipe_req and isinstance(clip_ref, list):
+            pipe_inputs["clip"] = clip_ref
+
+        missing = [k for k in pipe_req.keys() if k not in pipe_inputs]
+        if missing:
+            print("[HandsDetailer] skipped (pipe inputs missing)", {"pipe_builder": pipe_builder_type, "missing": missing[:8]})
+            return workflow
+
+        pipe_id = _next_numeric_node_id(workflow)
+        workflow[pipe_id] = {"inputs": pipe_inputs, "class_type": pipe_builder_type}
+        detailer_inputs[pipe_key] = [pipe_id, 0]
 
     workflow[detailer_id] = {"inputs": detailer_inputs, "class_type": detailer_type}
     detailer_outputs = _node_outputs(object_info, detailer_type)
@@ -645,9 +729,35 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
             img_out_idx = i
             break
 
-    save_inputs = workflow.get(save_id, {}).get("inputs")
-    if isinstance(save_inputs, dict) and save_inputs.get("images") == base_image_ref:
-        save_inputs["images"] = [detailer_id, img_out_idx]
+    redirected = 0
+    for nid, node in workflow.items():
+        if not isinstance(node, dict) or node.get("class_type") != "SaveImage":
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        if isinstance(inputs.get("images"), list) and len(inputs["images"]) == 2 and str(inputs["images"][0]) == str(vae_decode_id) and int(inputs["images"][1]) == 0:
+            inputs["images"] = [detailer_id, img_out_idx]
+            redirected += 1
+
+    print(
+        "[HandsDetailer] injected",
+        {
+            "workflow": requested_workflow or "default",
+            "provider": provider_type,
+            "bbox2segs": bbox_segs_type,
+            "detailer": detailer_type,
+            "pipe": bool(pipe_key),
+            "redirected_saveimage": redirected,
+            "threshold": thr,
+            "dilation": dilation,
+            "crop_factor": crop_factor,
+            "drop_size": drop_size,
+            "steps": detailer_inputs.get("steps"),
+            "cfg": detailer_inputs.get("cfg"),
+            "denoise": detailer_inputs.get("denoise"),
+        },
+    )
     return workflow
 
 
