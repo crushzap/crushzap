@@ -10,6 +10,7 @@ import { createWhatsAppRouter } from './rotas/whatsapp.rotas.mjs'
 import { createAuthRouter } from './rotas/auth.rotas.mjs'
 import { createCoreRouter } from './rotas/core.rotas.mjs'
 import { createConversasRouter } from './rotas/conversas.rotas.mjs'
+import { createMetaRouter } from './rotas/meta.rotas.mjs'
 import { ensureConversation as ensureConversationBase, ensureDefaultPersona as ensureDefaultPersonaBase, ensureUserByPhone as ensureUserByPhoneBase } from './dominio/conversas/servico.mjs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -75,6 +76,7 @@ app.get('/api/whatsapp/ping', (req, res) => {
   res.status(200).json({ ok: true })
 })
 app.use(createCoreRouter())
+app.use(createMetaRouter())
 app.use(createAuthRouter({ prisma }))
 app.use(createAdminRouter({ prisma }))
 app.use(createPagamentosRouter({ prisma, createPixPayment, processMercadoPagoWebhook, ensureUserByPhone, ensureDefaultPersona, ensureConversation }))

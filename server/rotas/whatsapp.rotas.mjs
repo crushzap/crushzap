@@ -17,6 +17,7 @@ import { handleOnboarding } from '../whatsapp/fluxos/onboarding.fluxo.mjs'
 import { handleConversaAgente } from '../whatsapp/fluxos/conversa-agente.fluxo.mjs'
 import { applyTrialConsumption, checkSubscriptionAllowance, hasActiveSubscription } from '../assinaturas/controle.mjs'
 import { createPixPayment } from '../pagamentos/mercadoPago.mjs'
+import { sendMetaCapiEvent } from '../integracoes/meta/meta-capi.mjs'
 import { composeSystemPrompt } from '../agents/prompt.mjs'
 import { generateWithGrok } from '../integrations/grok.mjs'
 import { buildLLMMessages } from '../dominio/llm/historico.mjs'
@@ -252,7 +253,77 @@ export function createWhatsAppRouter({ prisma }) {
           const desired = desiredRaw === 'text' ? 'text' : 'text'
           return sendWhatsAppReadTyping(ctxBase.sendId, ctxBase.phone, inboundId, desired)
         },
-        createPixPayment: (args) => createPixPayment({ prisma, ...args }),
+        createPixPayment: async (args) => {
+          const payload = args && typeof args === 'object' ? args : {}
+          const ctwaClidFromMsg = (ctxBase?.waMessage?.ctwaClid || '').toString().trim()
+          const ctwaClidEnv = (process.env.META_CTWA_CLID || '').toString().trim()
+          const ctwaClid = ctwaClidFromMsg || ctwaClidEnv
+          const pix = await createPixPayment({ prisma, ...payload, source: 'whatsapp', ctwaClid })
+          try {
+            const actionSource = ctwaClid ? 'business_messaging' : 'system_generated'
+            const type = (payload?.type || '').toString()
+            const planId = (payload?.planId || '').toString()
+            const action = (payload?.action || '').toString()
+            const amount = Number(payload?.amount || 0) || 0
+            const email = payload?.payerEmail
+            const phone = payload?.userPhone || ctxBase.phone
+            const contentCategory = type || (action ? 'avulso' : undefined)
+
+            let value = amount
+            let contentName = null
+            if (type === 'assinatura' && planId) {
+              const plan = await prisma.plan.findUnique({ where: { id: planId } })
+              if (plan) {
+                value = Number(plan.price) || value
+                contentName = (plan.name || '').toString() || null
+              }
+            } else if (action) {
+              contentName = action
+            }
+
+            const checkoutId = (pix?.checkoutId || '').toString()
+            const safeValue = Number.isFinite(value) && value > 0 ? value : undefined
+
+            if (checkoutId) {
+              await sendMetaCapiEvent({
+                eventName: 'AddToCart',
+                eventId: `wa_cart:${checkoutId}`,
+                actionSource,
+                currency: 'BRL',
+                value: safeValue,
+                email,
+                phone,
+                messagingChannel: 'whatsapp',
+                ctwaClid: ctwaClid || undefined,
+                customData: {
+                  content_name: contentName || undefined,
+                  content_category: contentCategory || undefined,
+                  order_id: checkoutId || undefined,
+                  source: 'whatsapp',
+                },
+              })
+
+              await sendMetaCapiEvent({
+                eventName: 'InitiateCheckout',
+                eventId: `wa_checkout:${checkoutId}`,
+                actionSource,
+                currency: 'BRL',
+                value: safeValue,
+                email,
+                phone,
+                messagingChannel: 'whatsapp',
+                ctwaClid: ctwaClid || undefined,
+                customData: {
+                  content_name: contentName || undefined,
+                  content_category: contentCategory || undefined,
+                  order_id: checkoutId || undefined,
+                  source: 'whatsapp',
+                },
+              })
+            }
+          } catch {}
+          return pix
+        },
         applyTrialConsumption,
         checkSubscriptionAllowance,
         maps,

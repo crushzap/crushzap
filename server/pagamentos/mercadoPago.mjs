@@ -11,7 +11,7 @@ function getCycleDaysForPlan(planName, env) {
   return Number(env.SUBSCRIPTION_CYCLE_DAYS || 30)
 }
 
-export async function createPixPayment({ prisma, type, planId, amount, action, credits, userPhone, phoneNumberId, payerEmail, payerName, env = process.env, fetchImpl = fetch }) {
+export async function createPixPayment({ prisma, type, planId, amount, action, credits, userPhone, phoneNumberId, payerEmail, payerName, source, ctwaClid, env = process.env, fetchImpl = fetch }) {
   if (!type || !['assinatura', 'avulso'].includes(type)) {
     throw new Error('Tipo inválido')
   }
@@ -44,6 +44,8 @@ export async function createPixPayment({ prisma, type, planId, amount, action, c
     credits: typeof credits === 'number' ? credits : (credits ? Number(credits) : null),
     user_phone: userPhone || null,
     phone_number_id: phoneNumberId || null,
+    source: source || null,
+    ctwa_clid: (ctwaClid || '').toString().trim() || null,
   }
   const baseRaw = (env.WEBHOOK_BASE_URL || env.WHATSAPP_URL_WEBHOOK_BASE || '').toString().trim()
   const base = baseRaw.replace(/\/api\/?$/i, '').replace(/\/$/, '')
@@ -150,6 +152,8 @@ export async function processMercadoPagoWebhook({ prisma, ensureUserByPhone, bod
     const mdCredits = Number(md?.credits || 0) || 0
     const mdUserPhone = (md?.userPhone ?? md?.user_phone ?? '').toString()
     const mdPhoneNumberId = (md?.phoneNumberId ?? md?.phone_number_id ?? '').toString()
+  const mdSource = (md?.source ?? '').toString()
+  const mdCtwaClid = (md?.ctwaClid ?? md?.ctwa_clid ?? '').toString()
 
     // Função auxiliar para registrar histórico
     const recordHistory = async (tx) => {
@@ -185,6 +189,10 @@ export async function processMercadoPagoWebhook({ prisma, ensureUserByPhone, bod
             ok: true,
             paymentId: paymentId.toString(),
             event: { type: 'assinatura_aprovada', userPhone: mdUserPhone, planName: plan.name, cycleDays, action: mdAction || null },
+            amount: Number(pay?.transaction_amount || 0) || 0,
+            currency: (pay?.currency_id || 'BRL').toString(),
+            source: mdSource || null,
+            ctwaClid: mdCtwaClid || null,
             phoneNumberId: mdPhoneNumberId || null,
           }
         } catch (e) {
@@ -229,6 +237,10 @@ export async function processMercadoPagoWebhook({ prisma, ensureUserByPhone, bod
             ok: true,
             paymentId: paymentId.toString(),
             event: { type: 'pacote_fotos_aprovado', userPhone: mdUserPhone, count },
+            amount: Number(pay?.transaction_amount || 0) || 0,
+            currency: (pay?.currency_id || 'BRL').toString(),
+            source: mdSource || null,
+            ctwaClid: mdCtwaClid || null,
             phoneNumberId: mdPhoneNumberId || null,
           }
         } catch (e) {
@@ -287,6 +299,10 @@ export async function processMercadoPagoWebhook({ prisma, ensureUserByPhone, bod
           ok: true,
           paymentId: paymentId.toString(),
           event: { type: 'creditos_aprovados', userPhone: mdUserPhone, credits },
+          amount: Number(pay?.transaction_amount || 0) || 0,
+          currency: (pay?.currency_id || 'BRL').toString(),
+          source: mdSource || null,
+          ctwaClid: mdCtwaClid || null,
           phoneNumberId: mdPhoneNumberId || null,
         }
       } catch (e) {

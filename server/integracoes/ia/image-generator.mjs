@@ -35,6 +35,9 @@ function anexarFragmentoPrompt(base, fragmento) {
 function aplicarCorrecaoDeMaosNoPrompt({ prompt, negativePrompt }) {
   const desativado = String(process.env.DISABLE_HAND_FIX || '').trim().toLowerCase() === 'true'
   if (desativado) return { prompt, negativePrompt }
+  const p = String(prompt || '').toLowerCase()
+  const hideHands = p.includes('hands out of frame') || p.includes('no hands') || p.includes('no fingers')
+  if (hideHands) return { prompt, negativePrompt }
   return {
     prompt: anexarFragmentoPrompt(prompt, PROMPT_MAOS_POSITIVO),
     negativePrompt: anexarFragmentoPrompt(negativePrompt, PROMPT_MAOS_NEGATIVO),
@@ -64,15 +67,15 @@ function getUrlBasenameLower(u) {
 function filtrarRefsCloseUp(refs, poseType) {
   const t = String(poseType || '').toLowerCase().trim()
   const allowBase =
-    t === 'pussy'
+    t === 'pussy' || t.startsWith('pussy_')
       ? ['pussy_']
-      : t === 'breasts'
+      : t === 'breasts' || t.startsWith('breasts_')
         ? ['breasts_']
-        : t === 'butt'
+        : t === 'butt' || t.startsWith('butt_')
           ? ['butt_']
-          : t === 'anal'
+          : t === 'anal' || t.startsWith('anal_')
             ? ['anal_', 'butt_']
-            : t === 'oral'
+            : t === 'oral' || t.startsWith('oral_')
               ? ['oral_', 'face_']
               : []
   const allow = [...allowBase, 'face_', 'body_']
@@ -114,7 +117,11 @@ async function baixarRefComoBase64(url) {
  * @returns {Promise<{ok: boolean, url?: string, provider?: string, error?: string}>}
  */
 export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePrompt, refs, poseType, seed, baseImage, maskImage }) {
-  ;({ prompt, negativePrompt } = aplicarCorrecaoDeMaosNoPrompt({ prompt, negativePrompt }))
+  const poseTypeLowerForHands = String(poseType || '').toLowerCase().trim()
+  const isExplicitNoHandsPose = poseTypeLowerForHands === 'anal' || poseTypeLowerForHands === 'pussy'
+  if (!isExplicitNoHandsPose) {
+    ;({ prompt, negativePrompt } = aplicarCorrecaoDeMaosNoPrompt({ prompt, negativePrompt }))
+  }
   console.log(`[ImageGenerator] Iniciando geração. Prompt: ${prompt.slice(0, 50)}...`);
   const recentKey = `${String(poseType || '').toLowerCase().trim()}|${Array.isArray(refs) && refs.length ? String(refs[0] || '') : ''}`
 

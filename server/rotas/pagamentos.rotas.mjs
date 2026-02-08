@@ -1,5 +1,6 @@
 import express from 'express'
 import { sendWhatsAppText } from '../integracoes/whatsapp/cliente.mjs'
+import { extractMetaClientDataFromRequest, sendMetaCapiEvent } from '../integracoes/meta/meta-capi.mjs'
 
 export function createPagamentosRouter({ prisma, createPixPayment, processMercadoPagoWebhook, ensureUserByPhone, ensureDefaultPersona, ensureConversation }) {
   const router = express.Router()
@@ -7,7 +8,35 @@ export function createPagamentosRouter({ prisma, createPixPayment, processMercad
   router.post('/api/pagamentos/pix/checkout', async (req, res) => {
     const { type, planId, amount, action, credits, userPhone, phoneNumberId, payerEmail, payerName } = req.body || {}
     try {
-      const result = await createPixPayment({ prisma, type, planId, amount, action, credits, userPhone, phoneNumberId, payerEmail, payerName })
+      const result = await createPixPayment({ prisma, type, planId, amount, action, credits, userPhone, phoneNumberId, payerEmail, payerName, source: 'website' })
+      try {
+        let value = Number(amount) || 0
+        let contentName = null
+        if ((type || '').toString() === 'assinatura' && planId) {
+          const plan = await prisma.plan.findUnique({ where: { id: planId } })
+          if (plan) {
+            value = Number(plan.price) || value
+            contentName = (plan.name || '').toString() || null
+          }
+        }
+
+        const metaClient = extractMetaClientDataFromRequest(req)
+        await sendMetaCapiEvent({
+          eventName: 'InitiateCheckout',
+          eventId: `mp_checkout:${(result?.checkoutId || '').toString()}`,
+          actionSource: 'website',
+          currency: 'BRL',
+          value: Number.isFinite(value) ? value : undefined,
+          email: payerEmail,
+          phone: userPhone,
+          customData: {
+            content_name: contentName || undefined,
+            content_category: (type || '').toString() || undefined,
+            order_id: (result?.checkoutId || '').toString() || undefined,
+          },
+          ...metaClient,
+        })
+      } catch {}
       res.json(result)
     } catch (e) {
       const status = e.message === 'Tipo inválido' || e.message === 'planId obrigatório' || e.message === 'amount inválido' || e.message === 'action obrigatório' || e.message === 'Plano não encontrado' ? 400 : 500
@@ -21,6 +50,33 @@ export function createPagamentosRouter({ prisma, createPixPayment, processMercad
       if ((result?.event?.type === 'assinatura_aprovada' || result?.event?.type === 'creditos_aprovados' || result?.event?.type === 'pacote_fotos_aprovado') && result?.event?.userPhone) {
         console.log('[Webhook Pagamentos] Processando evento de aprovação:', result.event)
         const paymentId = (result?.paymentId || '').toString().trim()
+        try {
+          const eventType = (result?.event?.type || '').toString()
+          const eventName = eventType === 'assinatura_aprovada' ? 'Subscribe' : 'Purchase'
+          const planName = (result?.event?.planName || '').toString()
+          const count = Number(result?.event?.count || 0) || 0
+          const credits = Number(result?.event?.credits || 0) || 0
+          const isWhatsApp = (result?.source || '').toString() === 'whatsapp'
+          const ctwaClid = ((result?.ctwaClid || '').toString().trim()) || (process.env.META_CTWA_CLID || '').toString().trim()
+          const actionSource = isWhatsApp ? (ctwaClid ? 'business_messaging' : 'system_generated') : 'website'
+          await sendMetaCapiEvent({
+            eventName,
+            eventId: `mp_approved:${paymentId}:${eventType}`,
+            actionSource,
+            messagingChannel: isWhatsApp ? 'whatsapp' : undefined,
+            ctwaClid: isWhatsApp && ctwaClid ? ctwaClid : undefined,
+            currency: (result?.currency || 'BRL').toString(),
+            value: Number(result?.amount || 0) || undefined,
+            phone: result.event.userPhone.toString(),
+            customData: {
+              order_id: paymentId || undefined,
+              content_name: planName || undefined,
+              num_items: count || undefined,
+              credits: credits || undefined,
+              source: isWhatsApp ? 'whatsapp' : 'website',
+            },
+          })
+        } catch {}
         const sendId =
           (result.phoneNumberId || '').toString().trim()
           || (await prisma.whatsappConfig.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' } }))?.phoneNumberId

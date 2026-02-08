@@ -922,8 +922,13 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
     prompt = str(params.get("prompt") or "").strip() or existing_prompt
     negative = str(params.get("negative_prompt") or "").strip() or existing_negative
 
+    pose_type_lower = str(params.get("poseType") or "").strip().lower()
+    prompt_lower = prompt.lower()
+    prompt_explicitly_hides_hands = ("no hands" in prompt_lower) or ("hands out of frame" in prompt_lower) or ("no fingers" in prompt_lower)
     disable_hand_fix = str(params.get("disable_hand_fix") or "").strip().lower() in ("1", "true", "yes", "y", "on")
-    if not disable_hand_fix:
+    disable_hand_fix_effective = disable_hand_fix or (pose_type_lower.startswith(("anal", "pussy")) and prompt_explicitly_hides_hands)
+
+    if not disable_hand_fix_effective:
         prompt = _append_prompt_fragment(prompt, HANDS_POSITIVE_PROMPT)
         negative = _append_prompt_fragment(negative, HANDS_NEGATIVE_PROMPT)
         try:

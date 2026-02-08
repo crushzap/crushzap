@@ -13,6 +13,8 @@ export function extractWhatsAppMessages(body) {
         const id = (m?.id || '').toString()
         const from = m?.from || contact?.wa_id || ''
         const type = m?.type || 'text'
+        const referral = m?.referral || m?.context?.referral || null
+        const ctwaClid = (referral?.ctwa_clid || referral?.ctwaClid || '').toString()
         let text = m?.text?.body || ''
         let mediaId = ''
         let mimeType = ''
@@ -60,7 +62,7 @@ export function extractWhatsAppMessages(body) {
            text = `[Conteúdo: ${type}]`
         }
 
-        out.push({ id, from, type, text, phoneNumberId: metaPhoneId, replyId, replyTitle, mediaId, mimeType })
+        out.push({ id, from, type, text, phoneNumberId: metaPhoneId, replyId, replyTitle, mediaId, mimeType, ctwaClid })
       }
     }
   }

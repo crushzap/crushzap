@@ -124,6 +124,13 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
   const wantsToyPussy = wantsToyInsert && !wantsAnal
   const wantsRideToy =
     hasToyWord && /\b(sentand[oa]|cavalgand[oa]|ride|riding)\b/i.test(combinedLower)
+
+  const wantsHandsWords = /\b(mãos|maos|mão|mao|hands?|fingers?|dedos?|thumbs?)\b/i.test(combinedLower)
+  const wantsHandsActionWords =
+    /\b(abrindo|abrir|arreganh|espalhand|separand|puxand|spreading|spread|pulling|opening|open wide)/i.test(combinedLower)
+  const wantsAnalHands = wantsAnal && wantsHandsWords && wantsHandsActionWords
+  const wantsHandsHoldWords = /\b(segurand|apoiand|holding|resting)/i.test(combinedLower)
+  const wantsAnalHandsHold = wantsAnal && wantsHandsWords && wantsHandsHoldWords
   const wantsFingersCount =
     /\b(3|tr[eê]s)\s*dedos?\b/i.test(combinedLower)
       ? 3
@@ -149,10 +156,26 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
         "(face:1.5), (head:1.5), close-up, extreme close-up, macro lens, frame filled, anus, anal, pussy close-up, spreading pussy, spreading ass, fingering, inserted fingers, extra arms, extra hands, multiple hands, four hands, six fingers, 6 fingers, extra digit, bad hands, deformed hands, selfie, mirror selfie, phone, cellphone, holding phone, camera, mobile phone, male, text, watermark"
     },
     {
+      type: 'anal_hands_hold',
+      triggers: ['anal segurando', 'segurando a bunda', 'hands on butt', 'hands resting', 'holding butt', 'resting hands'],
+      prompt:
+        'close-up, rear view, nude adult woman, anus visible, butt cheeks visible, two hands only resting on butt cheeks, gentle relaxed hands, hands visible but cropped at wrists, no arms visible, five fingers per hand, natural finger placement, no spreading, no pulling, headless, no face, no upper body, cropped at waist, detailed skin, realistic texture',
+      negative:
+        "(face:1.5), (head:1.5), (upper body:1.5), (breasts:1.5), extra arms, extra hands, multiple hands, four hands, hands duplicated, six fingers, 6 fingers, extra digit, extra digits, missing fingers, fused fingers, malformed fingers, long fingers, bad hands, deformed hands, inverted hands, backwards hands, reversed fingers, bad finger anatomy, full body, eyes, portrait, clothing, underwear, panties, bra, bikini, male, text, watermark, selfie, mirror, phone, cellphone, holding phone, camera, mobile phone, front view, holding device"
+    },
+    {
+      type: 'anal_hands',
+      triggers: ['anal com as maos', 'anal com maos', 'abrindo o cu', 'abrindo o cuzinho', 'arreganhando o cu', 'hands spreading', 'spreading butt cheeks', 'thumbs pressing', 'fingers pulling'],
+      prompt:
+        'extreme close-up of anus, macro lens, frame filled with anal sphincter, two hands only spreading butt cheeks apart, hands visible but cropped at wrists, no arms visible, five fingers per hand, natural finger placement, thumbs pressing skin, fingers pulling cheeks outwards, realistic hand proportions, detailed knuckles and nails, rear view, headless, no face, no upper body, focus strictly on anus, cropped at waist, detailed skin, realistic texture',
+      negative:
+        "(face:1.5), (head:1.5), (upper body:1.5), (breasts:1.5), (back:1.2), extra arms, extra hands, multiple hands, four hands, hands duplicated, six fingers, 6 fingers, extra digit, extra digits, missing fingers, fused fingers, malformed fingers, long fingers, bad hands, deformed hands, inverted hands, backwards hands, reversed fingers, bad finger anatomy, full body, eyes, portrait, clothing, underwear, panties, bra, bikini, male, text, watermark, selfie, mirror, phone, cellphone, holding phone, camera, mobile phone, front view, holding device, looking at camera, nipples, navel, belly button, looking back, looking over shoulder, turned head, twisted neck"
+    },
+    {
       type: 'anal',
       triggers: ['anal', 'cuzinho', 'cu', 'anus', 'anual', 'rosca', 'asshole', 'butthole', 'anus'],
-      prompt: 'extreme close-up of anus, macro lens, frame filled with anal sphincter, two hands spreading butt cheeks apart, thumbs pressing skin, fingers pulling cheeks outwards, correct hand anatomy, rear view, headless, no face, no upper body, focus strictly on anus, cropped at waist, detailed skin, realistic texture',
-      negative: "(face:1.5), (head:1.5), (upper body:1.5), (breasts:1.5), (back:1.2), inverted hands, backwards hands, reversed fingers, bad finger anatomy, full body, eyes, portrait, clothing, underwear, panties, bra, bikini, male, text, watermark, bad anatomy, deformed, legs, feet, selfie, mirror, phone, cellphone, holding phone, camera, mobile phone, front view, holding device, looking at camera, nipples, navel, belly button, looking back, looking over shoulder, turned head, twisted neck"
+      prompt: 'extreme close-up of anus, macro lens, frame filled with anal sphincter, butt cheeks spread apart, hands cropped out, hands out of frame, no hands visible, no fingers visible, rear view, headless, no face, no upper body, focus strictly on anus, cropped at waist, detailed skin, realistic texture',
+      negative: "(face:1.5), (head:1.5), (upper body:1.5), (breasts:1.5), (back:1.2), hands in frame, fingers visible, arms in frame, extra arms, extra hands, multiple hands, four hands, six fingers, 6 fingers, extra digit, missing fingers, fused fingers, inverted hands, backwards hands, reversed fingers, bad finger anatomy, full body, eyes, portrait, clothing, underwear, panties, bra, bikini, male, text, watermark, bad anatomy, deformed, legs, feet, selfie, mirror, phone, cellphone, holding phone, camera, mobile phone, front view, holding device, looking at camera, nipples, navel, belly button, looking back, looking over shoulder, turned head, twisted neck"
     },
     {
       type: 'pussy',
@@ -340,6 +363,9 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
         else if (!negatedTypes.has('anal') && cleanPrompt.includes('anal')) poseType = 'anal'
         else if (!negatedTypes.has('butt') && cleanPrompt.includes('butt')) poseType = 'butt'
         else if (!negatedTypes.has('breasts') && cleanPrompt.includes('breasts')) poseType = 'breasts'
+        if (!disableActionOverrides && poseType === 'anal' && (wantsAnalHandsHold || wantsAnalHands) && !negatedTypes.has('anal')) {
+          applyPoseTemplate(wantsAnalHandsHold ? 'anal_hands_hold' : 'anal_hands')
+        }
       } else {
         cleanPrompt = stripByNegation(sanitizeForImageGen(photoTagContent), negatedTypes)
       }
@@ -348,6 +374,10 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
   if (!disableActionOverrides && poseType !== 'doggystyle') {
     if (wantsRideToy && !negatedTypes.has('pussy') && !negatedTypes.has('anal')) {
       applyPoseTemplate('ride_toy')
+    } else if (wantsAnalHandsHold && !negatedTypes.has('anal')) {
+      applyPoseTemplate('anal_hands_hold')
+    } else if (wantsAnalHands && !negatedTypes.has('anal')) {
+      applyPoseTemplate('anal_hands')
     } else if (wantsToyAnal && !negatedTypes.has('anal')) {
       applyPoseTemplate('anal_toy')
     } else if (wantsAnal && wantsFingering && !negatedTypes.has('anal')) {
@@ -378,7 +408,7 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
       
       // Se o usuário pediu peitos e NÃO pediu explicitamente anal, mas a pose foi resolvida como anal (devido a alucinação do LLM no prompt),
       // forçamos breasts.
-      if (userWantsBreasts && !userWantsAnal && (poseType === 'anal' || poseType === 'anal_fingers' || poseType === 'anal_toy')) {
+      if (userWantsBreasts && !userWantsAnal && (poseType === 'anal' || poseType === 'anal_hands' || poseType === 'anal_hands_hold' || poseType === 'anal_fingers' || poseType === 'anal_toy')) {
           console.log('[resolveImagePrompt] Correção forçada: Anal -> Breasts (baseado no input do usuário)')
           applyPoseTemplate('breasts')
       }
@@ -390,7 +420,7 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
       const userWantsAnalExplicit = hasAny(userLower, ['anal', 'cuzinho', 'cu', 'anus', 'rosca', 'asshole', 'butthole'])
       
       // Se detectou anal mas o usuário queria pussy (e não pediu anal explicitamente)
-      if (userWantsPussy && !userWantsAnalExplicit && (poseType === 'anal' || poseType === 'anal_fingers' || poseType === 'anal_toy')) {
+      if (userWantsPussy && !userWantsAnalExplicit && (poseType === 'anal' || poseType === 'anal_hands' || poseType === 'anal_hands_hold' || poseType === 'anal_fingers' || poseType === 'anal_toy')) {
          console.log('[resolveImagePrompt] Correção forçada: Anal -> Pussy (baseado no input do usuário)')
          if (wantsFingering || userWantsFingering) {
             applyPoseTemplate(`pussy_fingers_${wantsFingersCount}`)

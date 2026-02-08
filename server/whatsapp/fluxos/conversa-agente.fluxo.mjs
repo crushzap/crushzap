@@ -816,10 +816,18 @@ export async function handleConversaAgente(ctx) {
                   typeKey === 'pussy_open'
                   || typeKey === 'pussy_toy'
                   || typeKey.startsWith('pussy_fingers_')
+                  || typeKey === 'anal_hands'
+                  || typeKey === 'anal_hands_hold'
                   || typeKey === 'anal_fingers'
                   || typeKey === 'anal_toy'
                   || typeKey === 'ride_toy'
-                const hasPoseRefs = isActionPose ? names.some(n => n.name.startsWith(`${typeKey}_`)) : true
+                const hasPoseRefs = isActionPose
+                  ? (
+                      names.some(n => n.name.startsWith(`${typeKey}_`))
+                      || (isAnalFamily ? names.some(n => n.name.startsWith('anal_')) : false)
+                      || (isPussyFamily ? names.some(n => n.name.startsWith('pussy_')) : false)
+                    )
+                  : true
 
                 if (typeKey === 'breasts') {
                   pushBy(n => n.startsWith('breasts_'))
