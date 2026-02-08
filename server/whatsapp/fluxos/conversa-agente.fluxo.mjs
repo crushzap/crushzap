@@ -1040,39 +1040,72 @@ export async function handleConversaAgente(ctx) {
                 if (!finalUrl) {
                   throw new Error('Sem URL final para enviar no WhatsApp')
                 }
+                try {
+                  const waRes = await ctx.sendWhatsAppImageLink(sendId, phone, finalUrl, captionText)
+                  if (!waRes?.ok) {
+                    console.error('[ConversaAgente] Falha ao enviar imagem no WhatsApp', { sendId, phone, error: waRes?.error })
+                    throw new Error('whatsapp_send_failed')
+                  }
 
-                if (!isRecoveryFlow) {
-                    await consumeImageQuota(prisma, user.id)
-                    console.log('[ConversaAgente] Cota consumida para user:', user.id)
-                } else {
-                    console.log('[ConversaAgente] Cota NÃO consumida (Recovery Flow)')
-                }
-                
-                if (finalUrl) {
+                  console.log('[ConversaAgente] Imagem enviada via WhatsApp com legenda')
+
+                  if (!isRecoveryFlow) {
                     try {
-                        await ctx.sendWhatsAppImageLink(sendId, phone, finalUrl, captionText)
-                        console.log('[ConversaAgente] Imagem enviada via WhatsApp com legenda')
-                    } catch (waError) {
-                         console.error('[ConversaAgente] Erro crítico ao enviar imagem no WhatsApp:', waError)
-                         // Se falhar o envio da imagem, tenta mandar pelo menos o texto
-                         await sendWhatsAppText(sendId, phone, captionText)
+                      await consumeImageQuota(prisma, user.id)
+                      console.log('[ConversaAgente] Cota consumida para user:', user.id)
+                    } catch (quotaErr) {
+                      console.error('[ConversaAgente] Falha ao consumir cota de imagem', { userId: user.id, error: quotaErr?.message || String(quotaErr) })
                     }
-                } else {
-                     throw new Error('URL final vazia após upload')
-                }
+                  } else {
+                    console.log('[ConversaAgente] Cota NÃO consumida (Recovery Flow)')
+                  }
 
-                // Registra envio da imagem no histórico
-                await prisma.message.create({ 
-                  data: { 
-                    conversationId: conv.id, 
-                    userId: user.id, 
-                    personaId: persona.id, 
-                    direction: 'out', 
-                    type: 'image', 
-                    content: finalUrl, 
-                    status: 'sent' 
-                  } 
-                })
+                  await prisma.message.create({
+                    data: {
+                      conversationId: conv.id,
+                      userId: user.id,
+                      personaId: persona.id,
+                      direction: 'out',
+                      type: 'image',
+                      content: finalUrl,
+                      status: 'sent'
+                    }
+                  })
+                } catch (waError) {
+                  console.error('[ConversaAgente] Erro ao enviar imagem no WhatsApp', { sendId, phone, error: waError?.message || String(waError) })
+                  try {
+                    await prisma.message.create({
+                      data: {
+                        conversationId: conv.id,
+                        userId: user.id,
+                        personaId: persona.id,
+                        direction: 'out',
+                        type: 'image',
+                        content: finalUrl,
+                        status: 'failed'
+                      }
+                    })
+                  } catch {}
+
+                  const txt = (captionText || '').toString().trim()
+                  if (txt) {
+                    const fallbackRes = await sendWhatsAppText(sendId, phone, txt)
+                    const fallbackOk = !!fallbackRes?.ok
+                    try {
+                      await prisma.message.create({
+                        data: {
+                          conversationId: conv.id,
+                          userId: user.id,
+                          personaId: persona.id,
+                          direction: 'out',
+                          type: 'text',
+                          content: txt,
+                          status: fallbackOk ? 'sent' : 'failed'
+                        }
+                      })
+                    } catch {}
+                  }
+                }
 
               } catch (e) { console.error('[Foto] Erro ao enviar/consumir', e) }
             } else {

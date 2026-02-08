@@ -1,7 +1,14 @@
+function normalizePhoneNumberId(input) {
+  const id = (input || '').toString().trim()
+  return id || null
+}
+
 export async function sendWhatsAppText(phoneNumberId, to, text) {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const payload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } }
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) })
   const body = await res.text()
@@ -19,9 +26,11 @@ export async function sendWhatsAppText(phoneNumberId, to, text) {
 }
 
 export async function sendWhatsAppButtons(phoneNumberId, to, bodyText, buttons) {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const safeBody = (bodyText || '').toString().trim().slice(0, 1024)
   const safeButtons = Array.isArray(buttons) ? buttons.slice(0, 3) : []
   const payload = {
@@ -59,9 +68,11 @@ export async function sendWhatsAppButtons(phoneNumberId, to, bodyText, buttons) 
 }
 
 export async function sendWhatsAppList(phoneNumberId, to, bodyText, rows, sectionTitle = 'Opções', buttonLabel = 'Escolher') {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const safeRows = Array.isArray(rows) ? rows.slice(0, 10) : []
   const safeButton = (buttonLabel || 'Escolher').toString().trim().slice(0, 20)
   const safeSectionTitle = (sectionTitle || 'Opções').toString().trim().slice(0, 24)
@@ -101,9 +112,11 @@ export async function sendWhatsAppList(phoneNumberId, to, bodyText, rows, sectio
 }
 
 export async function sendWhatsAppImageLink(phoneNumberId, to, imageUrl, caption) {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const safeCaption = caption == null ? undefined : String(caption).trim().slice(0, 1024)
   const payload = {
     messaging_product: 'whatsapp',
@@ -128,7 +141,9 @@ export async function sendWhatsAppImageLink(phoneNumberId, to, imageUrl, caption
 }
 
 export async function uploadWhatsAppMediaFromUrl(phoneNumberId, mediaUrl, mimeType = 'image/png') {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
 
   const dl = await fetch(String(mediaUrl))
@@ -137,7 +152,7 @@ export async function uploadWhatsAppMediaFromUrl(phoneNumberId, mediaUrl, mimeTy
   const ct = contentType || String(mimeType || 'image/png')
   const buf = Buffer.from(await dl.arrayBuffer())
 
-  const upUrl = `https://graph.facebook.com/v19.0/${phoneNumberId}/media`
+  const upUrl = `https://graph.facebook.com/v19.0/${id}/media`
   const form = new FormData()
   form.append('messaging_product', 'whatsapp')
   const ext =
@@ -178,10 +193,12 @@ export async function uploadWhatsAppMediaFromUrl(phoneNumberId, mediaUrl, mimeTy
 }
 
 export async function sendWhatsAppImageMediaId(phoneNumberId, to, mediaId, caption) {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
 
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const safeCaption = caption == null ? undefined : String(caption).trim().slice(0, 1024)
   const payload = {
     messaging_product: 'whatsapp',
@@ -207,7 +224,7 @@ export async function sendWhatsAppImageMediaId(phoneNumberId, to, mediaId, capti
 
 export async function sendWhatsAppImageSmart(phoneNumberId, to, imageUrl, caption) {
   const uploadFirst = (process.env.WHATSAPP_IMAGE_UPLOAD_FIRST || '').toString().trim().toLowerCase()
-  const shouldUploadFirst = !uploadFirst || uploadFirst === '1' || uploadFirst === 'true' || uploadFirst === 'sim' || uploadFirst === 'yes'
+  const shouldUploadFirst = uploadFirst === '1' || uploadFirst === 'true' || uploadFirst === 'sim' || uploadFirst === 'yes'
   if (shouldUploadFirst) {
     const up = await uploadWhatsAppMediaFromUrl(phoneNumberId, imageUrl)
     const mediaId = up?.data?.id
@@ -224,9 +241,11 @@ export async function sendWhatsAppImageSmart(phoneNumberId, to, imageUrl, captio
 }
 
 export async function sendWhatsAppAudioLink(phoneNumberId, to, audioUrl) {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const payload = {
     messaging_product: 'whatsapp',
     to,
@@ -249,10 +268,12 @@ export async function sendWhatsAppAudioLink(phoneNumberId, to, audioUrl) {
 }
 
 export async function sendWhatsAppAudioMediaId(phoneNumberId, to, mediaId) {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
 
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const payload = {
     messaging_product: 'whatsapp',
     to,
@@ -278,7 +299,7 @@ export async function sendWhatsAppAudioMediaId(phoneNumberId, to, mediaId) {
 export async function sendWhatsAppAudioSmart(phoneNumberId, to, audioUrl) {
   const t0 = Date.now()
   const uploadFirst = (process.env.WHATSAPP_AUDIO_UPLOAD_FIRST || '').toString().trim().toLowerCase()
-  const shouldUploadFirst = !uploadFirst || uploadFirst === '1' || uploadFirst === 'true' || uploadFirst === 'sim' || uploadFirst === 'yes'
+  const shouldUploadFirst = uploadFirst === '1' || uploadFirst === 'true' || uploadFirst === 'sim' || uploadFirst === 'yes'
   console.log('[WhatsApp][Audio] send start', { to, uploadFirst: shouldUploadFirst })
   if (shouldUploadFirst) {
     const up = await uploadWhatsAppMediaFromUrl(phoneNumberId, audioUrl, 'audio/ogg')
@@ -308,12 +329,14 @@ export async function sendWhatsAppAudioSmart(phoneNumberId, to, audioUrl) {
 }
 
 export async function sendWhatsAppReadTyping(phoneNumberId, to, messageId, type = 'text') {
+  const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
+  if (!id) return { ok: false, error: 'phoneNumberId ausente' }
   if (!token) return { ok: false, error: 'Token WhatsApp não configurado' }
   const mid = (messageId || '').toString().trim()
   if (!mid) return { ok: false, error: 'messageId ausente' }
 
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+  const url = `https://graph.facebook.com/v19.0/${id}/messages`
   const payload = {
     messaging_product: 'whatsapp',
     status: 'read',

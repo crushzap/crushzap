@@ -8,7 +8,12 @@ export async function criarContextoWhatsapp({ prisma, req, waMessage, ensureUser
   const text = (waMessage.text || '').toString()
   const reply = (waMessage.replyId || '').toString()
   const typed = text.replace(/[!?.]/g, '').trim().toLowerCase()
-  const sendId = req.params.phoneNumberId || waMessage.phoneNumberId
+  const metaId = (waMessage?.phoneNumberId || '').toString().trim()
+  const routeId = (req?.params?.phoneNumberId || '').toString().trim()
+  if (metaId && routeId && metaId !== routeId) {
+    console.warn('[WhatsApp] phoneNumberId divergente', { metaId, routeId })
+  }
+  const sendId = metaId || routeId
   const state = maps?.onboarding?.get(user.id)
   const flow = maps?.upgradeFlow?.get(user.id)
   const billing = maps?.billingFlow?.get(user.id)
