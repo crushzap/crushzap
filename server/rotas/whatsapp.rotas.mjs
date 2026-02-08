@@ -200,6 +200,9 @@ export function createWhatsAppRouter({ prisma }) {
         text: (ctxBase.text || '').toString(), 
         personaId: ctxBase.persona?.id, 
         personaName: ctxBase.persona?.name, 
+        phoneNumberId: ctxBase.sendId,
+        webhookPhoneNumberId: req.params.phoneNumberId,
+        metaPhoneNumberId: ctxBase?.waMessage?.phoneNumberId,
         dbType,
         desc: dbMetadata?.description
       })

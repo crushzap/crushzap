@@ -3,6 +3,11 @@ function normalizePhoneNumberId(input) {
   return id || null
 }
 
+function parseBoolEnv(input) {
+  const v = (input || '').toString().trim().toLowerCase()
+  return v === '1' || v === 'true' || v === 'sim' || v === 'yes' || v === 'y'
+}
+
 export async function sendWhatsAppText(phoneNumberId, to, text) {
   const id = normalizePhoneNumberId(phoneNumberId)
   const token = (process.env.WHATSAPP_ACCESS_TOKEN || '').toString().trim()
@@ -223,16 +228,18 @@ export async function sendWhatsAppImageMediaId(phoneNumberId, to, mediaId, capti
 }
 
 export async function sendWhatsAppImageSmart(phoneNumberId, to, imageUrl, caption) {
-  const uploadFirst = (process.env.WHATSAPP_IMAGE_UPLOAD_FIRST || '').toString().trim().toLowerCase()
-  const shouldUploadFirst = uploadFirst === '1' || uploadFirst === 'true' || uploadFirst === 'sim' || uploadFirst === 'yes'
-  if (shouldUploadFirst) {
+  const uploadFirst = parseBoolEnv(process.env.WHATSAPP_IMAGE_UPLOAD_FIRST)
+  const uploadFallback = parseBoolEnv(process.env.WHATSAPP_IMAGE_UPLOAD_FALLBACK)
+  const enableUpload = parseBoolEnv(process.env.WHATSAPP_ENABLE_MEDIA_UPLOAD) || uploadFirst || uploadFallback
+  if (uploadFirst && enableUpload) {
     const up = await uploadWhatsAppMediaFromUrl(phoneNumberId, imageUrl)
     const mediaId = up?.data?.id
     if (up.ok && mediaId) return sendWhatsAppImageMediaId(phoneNumberId, to, mediaId, caption)
   }
-
   const linkRes = await sendWhatsAppImageLink(phoneNumberId, to, imageUrl, caption)
   if (linkRes?.ok) return linkRes
+
+  if (!enableUpload || !uploadFallback) return linkRes
 
   const up = await uploadWhatsAppMediaFromUrl(phoneNumberId, imageUrl)
   const mediaId = up?.data?.id
@@ -298,10 +305,11 @@ export async function sendWhatsAppAudioMediaId(phoneNumberId, to, mediaId) {
 
 export async function sendWhatsAppAudioSmart(phoneNumberId, to, audioUrl) {
   const t0 = Date.now()
-  const uploadFirst = (process.env.WHATSAPP_AUDIO_UPLOAD_FIRST || '').toString().trim().toLowerCase()
-  const shouldUploadFirst = uploadFirst === '1' || uploadFirst === 'true' || uploadFirst === 'sim' || uploadFirst === 'yes'
-  console.log('[WhatsApp][Audio] send start', { to, uploadFirst: shouldUploadFirst })
-  if (shouldUploadFirst) {
+  const uploadFirst = parseBoolEnv(process.env.WHATSAPP_AUDIO_UPLOAD_FIRST)
+  const uploadFallback = parseBoolEnv(process.env.WHATSAPP_AUDIO_UPLOAD_FALLBACK)
+  const enableUpload = parseBoolEnv(process.env.WHATSAPP_ENABLE_MEDIA_UPLOAD) || uploadFirst || uploadFallback
+  console.log('[WhatsApp][Audio] send start', { to, uploadFirst, uploadFallback, enableUpload })
+  if (uploadFirst && enableUpload) {
     const up = await uploadWhatsAppMediaFromUrl(phoneNumberId, audioUrl, 'audio/ogg')
     const mediaId = up?.data?.id
     if (up.ok && mediaId) {
@@ -314,6 +322,11 @@ export async function sendWhatsAppAudioSmart(phoneNumberId, to, audioUrl) {
   const linkRes = await sendWhatsAppAudioLink(phoneNumberId, to, audioUrl)
   if (linkRes?.ok) {
     console.log('[WhatsApp][Audio] sent', { to, ok: true, via: 'link', ms: Date.now() - t0 })
+    return linkRes
+  }
+
+  if (!enableUpload || !uploadFallback) {
+    console.log('[WhatsApp][Audio] skipped_upload_fallback', { to, ms: Date.now() - t0 })
     return linkRes
   }
 
