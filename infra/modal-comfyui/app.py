@@ -267,7 +267,10 @@ def _ensure_assets_present():
     ckpt_inpaint, lora_inpaint, clip_inpaint, ip_inpaint = _extract_assets_from_workflow(wf_inpaint)
     ckpt_inpaint_scene, lora_inpaint_scene, clip_inpaint_scene, ip_inpaint_scene = _extract_assets_from_workflow(wf_inpaint_scene)
 
-    checkpoint_filename = _read_env_str("CHECKPOINT_FILENAME", ckpt_default or ckpt_pack or ckpt_pose or ckpt_skel or ckpt_inpaint_scene or ckpt_inpaint)
+    # HARDCODED: Força RealVisXL para garantir atualização
+    # checkpoint_filename = _read_env_str("CHECKPOINT_FILENAME", ckpt_default or ckpt_pack or ckpt_pose or ckpt_skel or ckpt_inpaint_scene or ckpt_inpaint)
+    checkpoint_filename = "realvisxlV50_v50LightningBakedvae.safetensors"
+    
     lora_filename = _read_env_str("LORA_FILENAME", lora_default or lora_pack or lora_pose or lora_skel or lora_inpaint_scene or lora_inpaint)
     clip_vision_filename = _read_env_str("CLIP_VISION_FILENAME", clip_default or clip_pack or clip_pose or clip_skel or clip_inpaint_scene or clip_inpaint)
     ipadapter_filename = _read_env_str("IPADAPTER_FILENAME", ip_default or ip_pack or ip_pose or ip_skel or ip_inpaint_scene or ip_inpaint)
@@ -422,18 +425,23 @@ def _ensure_assets_present():
             # Copia para cache se não existir
             if not os.path.exists(cn_from_volume):
                 shutil.copyfile(model_path, cn_from_volume)
-            # Linka com aspas para evitar erro de espaço (embora este nome não tenha, boa prática)
-            subprocess.run(f'ln -sf "{cn_from_volume}" "{cn_dest}"', shell=True, check=True)
+            
+            # ATENÇÃO: Usando cópia física para pasta de modelos para evitar problemas de symlink
+            if os.path.exists(cn_dest): os.unlink(cn_dest)
+            shutil.copyfile(cn_from_volume, cn_dest)
+            print(f"[Assets] ControlNet copiado fisicamente para: {cn_dest}")
+
         except Exception as e:
             print(f"[Assets] Erro ao baixar ControlNet {cn_filename}: {e}")
             
     # Força refresh da lista de modelos no ComfyUI
-    # O ComfyUI às vezes carrega a lista antes dos links estarem prontos. 
-    # Tocar no diretório pode ajudar, mas o ideal é garantir que os links existam antes do Comfy subir (o que já fazemos no start)
     try:
         if os.path.exists(controlnet_dir):
             os.utime(controlnet_dir, None)
-    except: pass
+            # Debug: Listar arquivos
+            print(f"[Assets] Conteúdo de {controlnet_dir}: {os.listdir(controlnet_dir)}")
+    except Exception as e: 
+        print(f"[Assets] Erro listando controlnets: {e}")
 
     for cn_filename, cn_repo_id in [
         ("diffusers_xl_canny_full.safetensors", "lllyasviel/sd_control_collection"),
@@ -1120,7 +1128,8 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
                 break
 
     # Sobrescreve o checkpoint se definido no ENV
-    env_ckpt = _read_env_str("CHECKPOINT_FILENAME", "")
+    # env_ckpt = _read_env_str("CHECKPOINT_FILENAME", "")
+    env_ckpt = "realvisxlV50_v50LightningBakedvae.safetensors" # HARDCODED
     if env_ckpt:
         for node in workflow.values():
             if not isinstance(node, dict): continue
