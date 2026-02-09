@@ -1218,12 +1218,11 @@ class ComfyUIService:
         print("[app] Starting container...", {"version": APP_VERSION})
         try:
             _ensure_assets_present()
-            print("[app] Assets ensured.")
+            print("[app] Assets ensured. Sleeping 5s to sync FS...")
+            time.sleep(5) 
         except Exception as e:
             print(f"[app] CRITICAL: _ensure_assets_present failed: {e}")
-            # Não relança a exceção para permitir que o ComfyUI tente subir mesmo assim (pode falhar depois, mas temos logs)
-            # raise e 
-
+            
         launch = ["python", "main.py", "--listen", "127.0.0.1", "--port", str(self.port)]
         print(f"[app] Launching ComfyUI: {launch}")
         try:

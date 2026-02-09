@@ -376,18 +376,9 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
     console.error("[ImageGenerator] Erro crítico no Modal:", err);
   }
 
-  // 2. Tentar RunComfy (DESABILITADO - Sem credenciais)
+  // 2. Tentar RunComfy (REMOVIDO - Sem credenciais)
   /*
-  try {
-    const resultRunComfy = await gerarImagemRunComfy({ prompt, negativePrompt, aspectRatio, refs: refsParaFallbacks, poseType });
-    if (resultRunComfy.ok) {
-      console.log("[ImageGenerator] Sucesso com RunComfy");
-      return resultRunComfy;
-    }
-    console.warn("[ImageGenerator] Falha no RunComfy, tentando ComfyUI:", resultRunComfy.error);
-  } catch (err) {
-    console.error("[ImageGenerator] Erro crítico no RunComfy:", err);
-  }
+  // Código RunComfy removido para limpeza
   */
 
   // 3. Tentar ComfyUI
