@@ -277,12 +277,21 @@ def _ensure_assets_present():
         dest = f"{ckpt_dir}/{checkpoint_filename}"
         if os.path.exists(src):
             try:
-                if not os.path.exists(dest):
-                    shutil.copyfile(src, dest)
-                else:
-                    subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
-            except Exception:
+                # Se for link simbólico quebrado ou arquivo antigo, remove
+                if os.path.islink(dest) or os.path.exists(dest):
+                    os.unlink(dest)
+                
+                # Tenta linkar primeiro (mais rápido)
                 subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
+            except Exception:
+                # Fallback para cópia se link falhar
+                try:
+                    shutil.copyfile(src, dest)
+                except Exception as e:
+                    print(f"[Assets] Erro ao copiar checkpoint {checkpoint_filename}: {e}")
+        else:
+            print(f"[Assets] Checkpoint não encontrado no cache: {src}")
+            
         print("[Assets] checkpoint", {"default": ckpt_default, "pack": ckpt_pack, "env": _read_env_str("CHECKPOINT_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
 
     if lora_filename:
@@ -410,10 +419,21 @@ def _ensure_assets_present():
                 token=token if token else None,
             )
             os.makedirs(f"{cache_root}/controlnet", exist_ok=True)
-            subprocess.run(f"cp -f {model_path} {cn_from_volume}", shell=True, check=True)
-            subprocess.run(f"ln -sf {cn_from_volume} {cn_dest}", shell=True, check=True)
+            # Copia para cache se não existir
+            if not os.path.exists(cn_from_volume):
+                shutil.copyfile(model_path, cn_from_volume)
+            # Linka com aspas para evitar erro de espaço (embora este nome não tenha, boa prática)
+            subprocess.run(f'ln -sf "{cn_from_volume}" "{cn_dest}"', shell=True, check=True)
         except Exception as e:
             print(f"[Assets] Erro ao baixar ControlNet {cn_filename}: {e}")
+            
+    # Força refresh da lista de modelos no ComfyUI
+    # O ComfyUI às vezes carrega a lista antes dos links estarem prontos. 
+    # Tocar no diretório pode ajudar, mas o ideal é garantir que os links existam antes do Comfy subir (o que já fazemos no start)
+    try:
+        if os.path.exists(controlnet_dir):
+            os.utime(controlnet_dir, None)
+    except: pass
 
     for cn_filename, cn_repo_id in [
         ("diffusers_xl_canny_full.safetensors", "lllyasviel/sd_control_collection"),
@@ -1098,6 +1118,17 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
             if isinstance(inputs, dict) and "filename_prefix" in inputs:
                 inputs["filename_prefix"] = str(params.get("filename_prefix") or "")
                 break
+
+    # Sobrescreve o checkpoint se definido no ENV
+    env_ckpt = _read_env_str("CHECKPOINT_FILENAME", "")
+    if env_ckpt:
+        for node in workflow.values():
+            if not isinstance(node, dict): continue
+            if node.get("class_type") == "CheckpointLoaderSimple":
+                inputs = node.get("inputs")
+                if isinstance(inputs, dict) and "ckpt_name" in inputs:
+                    inputs["ckpt_name"] = env_ckpt
+                    print(f"[App] Checkpoint substituído dinamicamente por: {env_ckpt}")
 
     passthrough = {
         "seed": params.get("seed"),
