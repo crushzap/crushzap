@@ -247,6 +247,25 @@ def _ensure_assets_present():
     os.makedirs(controlnet_dir, exist_ok=True)
     os.makedirs(bbox_dir, exist_ok=True)
 
+    try:
+        cache_controlnet_dir = f"{cache_root}/controlnet"
+        os.makedirs(cache_controlnet_dir, exist_ok=True)
+        if os.path.islink(controlnet_dir) or os.path.exists(controlnet_dir):
+            try:
+                if os.path.islink(controlnet_dir):
+                    os.unlink(controlnet_dir)
+                else:
+                    shutil.rmtree(controlnet_dir)
+            except Exception:
+                try:
+                    os.unlink(controlnet_dir)
+                except Exception:
+                    pass
+        subprocess.run(f'ln -sfn "{cache_controlnet_dir}" "{controlnet_dir}"', shell=True, check=True)
+        print(f"[Assets] ControlNet dir linkado: {controlnet_dir} -> {cache_controlnet_dir}")
+    except Exception as e:
+        print(f"[Assets] Falha ao linkar diretório de ControlNet: {e}")
+
     def link_if_exists(src_path: str, dest_path: str) -> bool:
         if os.path.exists(src_path):
             subprocess.run(f"ln -sf {src_path} {dest_path}", shell=True, check=True)
@@ -408,49 +427,15 @@ def _ensure_assets_present():
         except Exception as e:
             print(f"Erro baixando Hand Yolo Bbox: {e}")
 
-    # ControlNet OpenPose
-    cn_filename = "OpenPoseXL2.safetensors"
-    cn_from_volume = f"{cache_root}/controlnet/{cn_filename}"
-    cn_dest = f"{controlnet_dir}/{cn_filename}"
-    if not link_if_exists(cn_from_volume, cn_dest):
-        try:
-            token = _read_env_str("HF_TOKEN", "")
-            model_path = hf_hub_download(
-                repo_id="thibaud/controlnet-openpose-sdxl-1.0",
-                filename=cn_filename,
-                cache_dir=cache_root,
-                token=token if token else None,
-            )
-            os.makedirs(f"{cache_root}/controlnet", exist_ok=True)
-            # Copia para cache se não existir
-            if not os.path.exists(cn_from_volume):
-                shutil.copyfile(model_path, cn_from_volume)
-            
-            # ATENÇÃO: Usando cópia física para pasta de modelos para evitar problemas de symlink
-            if os.path.exists(cn_dest): os.unlink(cn_dest)
-            shutil.copyfile(cn_from_volume, cn_dest)
-            print(f"[Assets] ControlNet copiado fisicamente para: {cn_dest}")
-
-        except Exception as e:
-            print(f"[Assets] Erro ao baixar ControlNet {cn_filename}: {e}")
-            
-    # Força refresh da lista de modelos no ComfyUI
-    try:
-        if os.path.exists(controlnet_dir):
-            os.utime(controlnet_dir, None)
-            # Debug: Listar arquivos
-            print(f"[Assets] Conteúdo de {controlnet_dir}: {os.listdir(controlnet_dir)}")
-    except Exception as e: 
-        print(f"[Assets] Erro listando controlnets: {e}")
-
     for cn_filename, cn_repo_id in [
+        ("OpenPoseXL2.safetensors", "thibaud/controlnet-openpose-sdxl-1.0"),
         ("diffusers_xl_canny_full.safetensors", "lllyasviel/sd_control_collection"),
         ("diffusers_xl_depth_full.safetensors", "lllyasviel/sd_control_collection"),
     ]:
-        cn_from_volume = f"{cache_root}/controlnet/{cn_filename}"
-        cn_dest = f"{controlnet_dir}/{cn_filename}"
-        if not link_if_exists(cn_from_volume, cn_dest):
-            try:
+        try:
+            cn_cache_path = f"{cache_root}/controlnet/{cn_filename}"
+            if not os.path.exists(cn_cache_path):
+                print(f"[Assets] Baixando ControlNet para cache: {cn_filename}")
                 token = _read_env_str("HF_TOKEN", "")
                 model_path = hf_hub_download(
                     repo_id=cn_repo_id,
@@ -459,10 +444,9 @@ def _ensure_assets_present():
                     token=token if token else None,
                 )
                 os.makedirs(f"{cache_root}/controlnet", exist_ok=True)
-                subprocess.run(f"cp -f {model_path} {cn_from_volume}", shell=True, check=True)
-                subprocess.run(f"ln -sf {cn_from_volume} {cn_dest}", shell=True, check=True)
-            except Exception as e:
-                print(f"[Assets] Erro ao baixar ControlNet {cn_filename}: {e}")
+                shutil.copyfile(model_path, cn_cache_path)
+        except Exception as e:
+            print(f"[Assets] Erro garantindo ControlNet {cn_filename}: {e}")
 
     # Impact Pack BBox (YOLO)
     for bbox_name in ["face_yolo8n.pt", "hand_yolo8n.pt"]:
@@ -1139,6 +1123,18 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
                     inputs["ckpt_name"] = env_ckpt
                     print(f"[App] Checkpoint substituído dinamicamente por: {env_ckpt}")
 
+    try:
+        ckpt_lower = str(env_ckpt or "").lower()
+        if "lightning" in ckpt_lower:
+            if params.get("steps") is None:
+                params["steps"] = int(_read_env_int("LIGHTNING_STEPS", 6))
+            if params.get("cfg") is None:
+                params["cfg"] = float(_read_env_str("LIGHTNING_CFG", "1.6"))
+            if params.get("control_strength") is None:
+                params["control_strength"] = float(_read_env_str("LIGHTNING_CONTROL_STRENGTH", "0.65"))
+    except Exception:
+        pass
+
     passthrough = {
         "seed": params.get("seed"),
         "steps": params.get("steps"),
@@ -1259,6 +1255,23 @@ class ComfyUIService:
 
     @modal.method()
     def generate(self, payload: dict) -> bytes:
+        # Debug de Runtime para ControlNet
+        try:
+            cn_dir = "/root/comfy/ComfyUI/models/controlnet"
+            if os.path.exists(cn_dir):
+                files = os.listdir(cn_dir)
+                print(f"[Generate][Debug] Arquivos em {cn_dir}: {files}")
+                cn_path = f"{cn_dir}/OpenPoseXL2.safetensors"
+                if os.path.exists(cn_path):
+                    print(f"[Generate][Debug] OpenPoseXL2 size: {os.path.getsize(cn_path)} bytes")
+                else:
+                    print(f"[Generate][Debug] OpenPoseXL2 NÃO encontrado! Reiniciando ComfyUI...")
+            else:
+                print(f"[Generate][Debug] Diretório {cn_dir} NÃO existe!")
+            
+        except Exception as e:
+            print(f"[Generate][Debug] Erro ao listar controlnets: {e}")
+
         requested = str((payload or {}).get("workflow") or "").strip().lower()
         use_scene = False
         if requested == "pack":
@@ -1577,7 +1590,6 @@ class ComfyUIService:
         Path(temp_workflow).write_text(json.dumps(workflow), encoding="utf-8")
 
         import requests
-        import time
         from urllib.parse import quote
 
         api_base = f"http://127.0.0.1:{self.port}"

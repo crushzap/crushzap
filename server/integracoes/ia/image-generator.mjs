@@ -2,7 +2,6 @@
 import { gerarImagemReplicate } from './replicate-client.mjs';
 import { gerarImagemFal } from './fal-client.mjs';
 import { gerarImagemComfyUI } from './comfyui-client.mjs';
-import { gerarImagemRunComfy } from './runcomfy-client.mjs';
 import { gerarImagemModal } from './modal-client.mjs';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -371,17 +370,12 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
       console.log("[ImageGenerator] Sucesso com Modal");
       return resultModal;
     }
-    console.warn("[ImageGenerator] Falha no Modal, tentando RunComfy:", resultModal.error);
+    console.warn("[ImageGenerator] Falha no Modal, tentando ComfyUI:", resultModal.error);
   } catch (err) {
     console.error("[ImageGenerator] Erro crítico no Modal:", err);
   }
 
-  // 2. Tentar RunComfy (REMOVIDO - Sem credenciais)
-  /*
-  // Código RunComfy removido para limpeza
-  */
-
-  // 3. Tentar ComfyUI
+  // 2. Tentar ComfyUI
   try {
     const resultComfy = await gerarImagemComfyUI({ prompt, negativePrompt, aspectRatio, refs: refsParaFallbacks, poseType });
     if (resultComfy.ok) {
@@ -393,7 +387,7 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
     console.error("[ImageGenerator] Erro crítico no ComfyUI:", err);
   }
 
-  // 4. Tentar Replicate
+  // 3. Tentar Replicate
   try {
     const resultReplicate = await gerarImagemReplicate({ prompt, aspectRatio, negativePrompt });
     if (resultReplicate.ok) {
@@ -405,7 +399,7 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
     console.error("[ImageGenerator] Erro crítico no Replicate:", err);
   }
 
-  // 5. Tentar Fal.ai (Fallback)
+  // 4. Tentar Fal.ai (Fallback)
   try {
     console.log("[ImageGenerator] Tentando Fal.ai...");
     const resultFal = await gerarImagemFal({ prompt, aspectRatio, negativePrompt });
