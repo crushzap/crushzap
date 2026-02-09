@@ -10,13 +10,13 @@ export function LandingNavbar() {
           <img src="/crushzap-logo.png" alt="CrushZap Logo" className="h-10 w-auto object-contain" />
         </Link>
         <div className="hidden md:flex items-center gap-8">
-          <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <a href="/#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Recursos
           </a>
-          <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <a href="/#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Preços
           </a>
-          <a href="#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <a href="/#how-it-works" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Como Funciona
           </a>
         </div>
@@ -29,4 +29,3 @@ export function LandingNavbar() {
     </nav>
   );
 }
-

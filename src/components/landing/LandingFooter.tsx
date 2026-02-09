@@ -22,10 +22,10 @@ export function LandingFooter() {
           <div className="md:col-span-3">
             <p className="text-sm font-semibold text-foreground">Produto</p>
             <nav className="mt-4 flex flex-col gap-3 text-sm text-muted-foreground">
-              <a href="#features" className="hover:text-foreground transition-colors">
+              <a href="/#features" className="hover:text-foreground transition-colors">
                 Recursos
               </a>
-              <a href="#pricing" className="hover:text-foreground transition-colors">
+              <a href="/#pricing" className="hover:text-foreground transition-colors">
                 Planos
               </a>
               <a href="https://wa.me/5511968988140?text=Oi,%20Crush.%20Quer%20namorar%20comigo?" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
@@ -37,10 +37,10 @@ export function LandingFooter() {
           <div className="md:col-span-2">
             <p className="text-sm font-semibold text-foreground">Empresa</p>
             <nav className="mt-4 flex flex-col gap-3 text-sm text-muted-foreground">
-              <a href="#how-it-works" className="hover:text-foreground transition-colors">
+              <a href="/#how-it-works" className="hover:text-foreground transition-colors">
                 Como funciona
               </a>
-              <a href="#cta" className="hover:text-foreground transition-colors">
+              <a href="/#cta" className="hover:text-foreground transition-colors">
                 Começar agora
               </a>
             </nav>
