@@ -326,7 +326,7 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
 
     // Reduz a força do ControlNet para poses onde a interação de mãos é complexa (evita "mãos de boneco" ou duplicação)
     if (typeof controlStrength === 'number' && (poseType === 'anal_hands' || poseType === 'anal_hands_hold')) {
-        controlStrength = 0.55
+        controlStrength = 0.70
         console.log('[ImageGenerator] Reduzindo ControlNet strength para anal_hands:', controlStrength)
     }
 
