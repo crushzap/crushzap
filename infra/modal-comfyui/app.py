@@ -239,12 +239,14 @@ def _ensure_assets_present():
     clip_vision_dir = "/root/comfy/ComfyUI/models/clip_vision"
     ipadapter_dir = "/root/comfy/ComfyUI/models/ipadapter"
     controlnet_dir = "/root/comfy/ComfyUI/models/controlnet"
+    vae_dir = "/root/comfy/ComfyUI/models/vae"
     bbox_dir = "/root/comfy/ComfyUI/models/ultralytics/bbox"
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(lora_dir, exist_ok=True)
     os.makedirs(clip_vision_dir, exist_ok=True)
     os.makedirs(ipadapter_dir, exist_ok=True)
     os.makedirs(controlnet_dir, exist_ok=True)
+    os.makedirs(vae_dir, exist_ok=True)
     os.makedirs(bbox_dir, exist_ok=True)
 
     try:
@@ -266,6 +268,88 @@ def _ensure_assets_present():
     except Exception as e:
         print(f"[Assets] Falha ao linkar diretório de ControlNet: {e}")
 
+    try:
+        extra_paths = (
+            "comfyui:\n"
+            "    base_path: /root/comfy/ComfyUI\n"
+            "    ultralytics: models/ultralytics\n"
+            "    ultralytics_bbox: models/ultralytics/bbox\n"
+            "    ultralytics_segm: models/ultralytics/segm\n"
+        )
+        Path("/root/comfy/ComfyUI/extra_model_paths.yaml").write_text(extra_paths, encoding="utf-8")
+        print("[Assets] extra_model_paths.yaml atualizado (ultralytics)")
+    except Exception as e:
+        print(f"[Assets] Falha escrevendo extra_model_paths.yaml: {e}")
+
+    try:
+        hotfix_dir = "/root/comfy/ComfyUI/custom_nodes/ComfyUI-Impact-Subpack"
+        if os.path.exists(hotfix_dir):
+            patched = 0
+            for root, _dirs, files in os.walk(hotfix_dir):
+                for fn in files:
+                    if not str(fn).endswith(".py"):
+                        continue
+                    fp = os.path.join(root, fn)
+                    try:
+                        txt = Path(fp).read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        continue
+                    if "ultralytics_bbox" not in txt and "UltralyticsDetectorProvider" not in txt:
+                        continue
+                    before = txt
+                    txt = txt.replace(
+                        'folder_paths.get_filename_list("ultralytics_bbox")',
+                        'folder_paths.get_filename_list("ultralytics_bbox") or ["bbox/hand_yolov8n.pt","hand_yolov8n.pt","bbox/face_yolov8n.pt","face_yolov8n.pt"]',
+                    )
+                    txt = txt.replace(
+                        "folder_paths.get_filename_list('ultralytics_bbox')",
+                        "folder_paths.get_filename_list('ultralytics_bbox') or ['bbox/hand_yolov8n.pt','hand_yolov8n.pt','bbox/face_yolov8n.pt','face_yolov8n.pt']",
+                    )
+                    txt = txt.replace(
+                        'folder_paths.get_filename_list("ultralytics")',
+                        'folder_paths.get_filename_list("ultralytics") or ["bbox/hand_yolov8n.pt","hand_yolov8n.pt","bbox/face_yolov8n.pt","face_yolov8n.pt"]',
+                    )
+                    txt = txt.replace(
+                        "folder_paths.get_filename_list('ultralytics')",
+                        "folder_paths.get_filename_list('ultralytics') or ['bbox/hand_yolov8n.pt','hand_yolov8n.pt','bbox/face_yolov8n.pt','face_yolov8n.pt']",
+                    )
+                    if txt != before:
+                        try:
+                            Path(fp).write_text(txt, encoding="utf-8")
+                            patched += 1
+                        except Exception:
+                            pass
+            if patched:
+                print(f"[Assets] Hotfix Impact-Subpack aplicado em {patched} arquivo(s)")
+    except Exception as e:
+        print(f"[Assets] Falha aplicando hotfix Impact-Subpack: {e}")
+
+    try:
+        vae_repo_id = _read_env_str("VAE_REPO_ID", "madebyollin/sdxl-vae-fp16-fix")
+        vae_hf_filename = _read_env_str("VAE_HF_FILENAME", "sdxl.vae.safetensors")
+        vae_filename = _read_env_str("VAE_FILENAME", "sdxl.vae.safetensors")
+        vae_cache_path = f"{cache_root}/vae/{vae_filename}"
+        vae_dest_path = f"{vae_dir}/{vae_filename}"
+        if not os.path.exists(vae_cache_path):
+            token = _read_env_str("HF_TOKEN", "")
+            model_path = hf_hub_download(
+                repo_id=vae_repo_id,
+                filename=vae_hf_filename,
+                cache_dir=cache_root,
+                token=token if token else None,
+            )
+            os.makedirs(f"{cache_root}/vae", exist_ok=True)
+            shutil.copyfile(model_path, vae_cache_path)
+        try:
+            if os.path.islink(vae_dest_path) or os.path.exists(vae_dest_path):
+                os.unlink(vae_dest_path)
+        except Exception:
+            pass
+        subprocess.run(f'ln -sf "{vae_cache_path}" "{vae_dest_path}"', shell=True, check=True)
+        print(f"[Assets] VAE garantido: {vae_dest_path}")
+    except Exception as e:
+        print(f"[Assets] Falha garantindo VAE: {e}")
+
     def link_if_exists(src_path: str, dest_path: str) -> bool:
         if os.path.exists(src_path):
             subprocess.run(f"ln -sf {src_path} {dest_path}", shell=True, check=True)
@@ -286,9 +370,38 @@ def _ensure_assets_present():
     ckpt_inpaint, lora_inpaint, clip_inpaint, ip_inpaint = _extract_assets_from_workflow(wf_inpaint)
     ckpt_inpaint_scene, lora_inpaint_scene, clip_inpaint_scene, ip_inpaint_scene = _extract_assets_from_workflow(wf_inpaint_scene)
 
-    # HARDCODED: Força RealVisXL para garantir atualização
-    # checkpoint_filename = _read_env_str("CHECKPOINT_FILENAME", ckpt_default or ckpt_pack or ckpt_pose or ckpt_skel or ckpt_inpaint_scene or ckpt_inpaint)
-    checkpoint_filename = "realvisxlV50_v50LightningBakedvae.safetensors"
+    checkpoint_filename = _read_env_str(
+        "CHECKPOINT_FILENAME",
+        ckpt_pose
+        or ckpt_default
+        or ckpt_pack
+        or ckpt_skel
+        or ckpt_inpaint_scene
+        or ckpt_inpaint
+        or "",
+    ).strip()
+    try:
+        if not checkpoint_filename:
+            cache_ckpt_dir = f"{cache_root}/checkpoints"
+            if os.path.exists(cache_ckpt_dir):
+                candidates = [f for f in os.listdir(cache_ckpt_dir) if str(f).lower().endswith(".safetensors")]
+                preferred = None
+                for f in candidates:
+                    fl = str(f).lower()
+                    if ("realvisxl" in fl or "juggernaut" in fl) and "lightning" not in fl and "turbo" not in fl:
+                        preferred = f
+                        break
+                if not preferred:
+                    for f in candidates:
+                        fl = str(f).lower()
+                        if "lightning" not in fl and "turbo" not in fl:
+                            preferred = f
+                            break
+                if not preferred and candidates:
+                    preferred = candidates[0]
+                checkpoint_filename = str(preferred or checkpoint_filename or "").strip()
+    except Exception:
+        pass
     
     lora_filename = _read_env_str("LORA_FILENAME", lora_default or lora_pack or lora_pose or lora_skel or lora_inpaint_scene or lora_inpaint)
     clip_vision_filename = _read_env_str("CLIP_VISION_FILENAME", clip_default or clip_pack or clip_pose or clip_skel or clip_inpaint_scene or clip_inpaint)
@@ -410,23 +523,6 @@ def _ensure_assets_present():
         except Exception as e:
             print(f"Erro baixando Better Hands Lora: {e}")
 
-    bbox_filename = "hand_yolov8n.pt"
-    bbox_from_volume = f"{cache_root}/bbox/{bbox_filename}"
-    bbox_dest = f"{bbox_dir}/{bbox_filename}"
-    if not link_if_exists(bbox_from_volume, bbox_dest):
-        token = _read_env_str("HF_TOKEN", "")
-        try:
-            # Baixando do repo do impact pack ou similar
-            model_path = hf_hub_download(
-                repo_id="Bingsu/adetailer",
-                filename=bbox_filename,
-                cache_dir=cache_root,
-                token=token if token else None,
-            )
-            subprocess.run(f"ln -sf {model_path} {bbox_dest}", shell=True, check=True)
-        except Exception as e:
-            print(f"Erro baixando Hand Yolo Bbox: {e}")
-
     for cn_filename, cn_repo_id in [
         ("OpenPoseXL2.safetensors", "thibaud/controlnet-openpose-sdxl-1.0"),
         ("diffusers_xl_canny_full.safetensors", "lllyasviel/sd_control_collection"),
@@ -448,24 +544,7 @@ def _ensure_assets_present():
         except Exception as e:
             print(f"[Assets] Erro garantindo ControlNet {cn_filename}: {e}")
 
-    # Impact Pack BBox (YOLO)
-    for bbox_name in ["face_yolo8n.pt", "hand_yolo8n.pt"]:
-        bbox_from = f"{cache_root}/bbox/{bbox_name}"
-        bbox_dest = f"{bbox_dir}/{bbox_name}"
-        if not link_if_exists(bbox_from, bbox_dest):
-            try:
-                token = _read_env_str("HF_TOKEN", "")
-                model_path = hf_hub_download(
-                    repo_id="Bingsu/adetailer",
-                    filename=bbox_name,
-                    cache_dir=cache_root,
-                    token=token if token else None,
-                )
-                os.makedirs(f"{cache_root}/bbox", exist_ok=True)
-                subprocess.run(f"cp -f {model_path} {bbox_from}", shell=True, check=True)
-                subprocess.run(f"ln -sf {bbox_from} {bbox_dest}", shell=True, check=True)
-            except Exception as e:
-                print(f"[Assets] Erro ao baixar BBox {bbox_name}: {e}")
+    _ensure_ultralytics_bbox_models(cache_root)
 
     # LoRA Metal Stocks (BDSM)
     lora_bdsm = "metalstocks2-03.safetensors"
@@ -525,6 +604,21 @@ def _node_required_inputs(object_info: dict, class_type: str) -> dict:
         return {}
 
 
+def _node_all_inputs(object_info: dict, class_type: str) -> dict:
+    try:
+        inp = (object_info.get(class_type) or {}).get("input", {})
+        required = (inp or {}).get("required", {})
+        optional = (inp or {}).get("optional", {})
+        merged: dict = {}
+        if isinstance(optional, dict):
+            merged.update(optional)
+        if isinstance(required, dict):
+            merged.update(required)
+        return merged
+    except Exception:
+        return {}
+
+
 def _node_outputs(object_info: dict, class_type: str) -> list[str]:
     try:
         outputs = (object_info.get(class_type) or {}).get("output", [])
@@ -551,13 +645,16 @@ def _pick_node_type_by_predicate(object_info: dict, predicate) -> str | None:
 
 def _pick_choice_ending_with(object_info: dict, class_type: str, input_name: str, suffix: str) -> str | None:
     try:
-        spec = _node_required_inputs(object_info, class_type).get(input_name)
+        spec = _node_all_inputs(object_info, class_type).get(input_name)
         if not isinstance(spec, list) or len(spec) < 2:
             return None
-        meta = spec[1]
-        if not isinstance(meta, dict):
-            return None
-        choices = meta.get("choices")
+        choices = None
+        if isinstance(spec[0], list):
+            choices = spec[0]
+        else:
+            meta = spec[1]
+            if isinstance(meta, dict):
+                choices = meta.get("choices")
         if not isinstance(choices, list):
             return None
         suf = str(suffix).lower()
@@ -591,7 +688,6 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
     if _read_env_str("DISABLE_HAND_DETAILER", "").strip().lower() in ("1", "true", "yes", "y", "on"):
         return workflow
 
-    # Verifica se deve aplicar o detailer
     requested_workflow = str(params.get("workflow") or "").strip().lower()
     prompt_text = _read_workflow_prompt_text(workflow).lower()
     always = _read_env_str("HANDS_DETAILER_ALWAYS", "false").strip().lower() in ("1", "true", "yes", "y", "on")
@@ -600,10 +696,8 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
     if not should:
         return workflow
 
-    # Procura node ADetailer (mais simples e eficaz se disponível)
     adetailer_type = "ADetailer" if "ADetailer" in object_info else None
     
-    # Se tiver ADetailer, usa ele (rota preferencial)
     if adetailer_type:
         vae_decode_id = _find_first_node_id(workflow, "VAEDecode")
         save_id = _find_first_node_id(workflow, "SaveImage")
@@ -611,37 +705,80 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         
         if vae_decode_id and save_id and ckpt_id:
             adetailer_id = _next_numeric_node_id(workflow)
-            
-            # Inputs do ADetailer
-            inputs = {
+
+            inputs: dict = {
                 "image": [vae_decode_id, 0],
-                "model": [ckpt_id, 0], # Precisa do modelo base para inpainting
-                "positive": "perfect hands, five fingers per hand, detailed fingers, no deformities, anatomically correct",
-                "negative": "deformed hands, extra fingers, missing fingers, fused fingers, bad anatomy, polydactyly, six fingers",
-                "detection_hint": "hand",
-                "bbox_detector": "hand_yolov8n.pt",
-                "confidence": 0.3,
-                "denoise": 0.35, # Denoise baixo para preservar coerência, mas alto o suficiente para corrigir
-                "steps": 20,
-                "seed": random.randint(0, 2**32 - 1)
+                "model": [ckpt_id, 0],
             }
-            
-            # Adiciona clip se disponível (opcional, mas bom)
-            if "clip" in _node_required_inputs(object_info, adetailer_type):
+
+            ksampler_id = _find_first_node_id(workflow, "KSampler")
+            ks_inputs = (workflow.get(ksampler_id) or {}).get("inputs") if ksampler_id else {}
+            ad_req = _node_required_inputs(object_info, adetailer_type)
+            ad_all = _node_all_inputs(object_info, adetailer_type)
+
+            if "positive" in ad_req:
+                if isinstance(ks_inputs, dict) and isinstance(ks_inputs.get("positive"), list) and str(ad_req["positive"][0]).upper() == "CONDITIONING":
+                    inputs["positive"] = ks_inputs.get("positive")
+                elif str(ad_req["positive"][0]).upper() in ("STRING", "TEXT"):
+                    inputs["positive"] = "perfect hands, five fingers per hand, detailed fingers, anatomically correct"
+
+            if "negative" in ad_req:
+                if isinstance(ks_inputs, dict) and isinstance(ks_inputs.get("negative"), list) and str(ad_req["negative"][0]).upper() == "CONDITIONING":
+                    inputs["negative"] = ks_inputs.get("negative")
+                elif str(ad_req["negative"][0]).upper() in ("STRING", "TEXT"):
+                    inputs["negative"] = "deformed hands, extra fingers, six fingers, fused fingers, bad anatomy"
+
+            detector_key = None
+            for k in ("bbox_detector", "detector", "model_name"):
+                if k in ad_all:
+                    detector_key = k
+                    break
+
+            if detector_key:
+                det_choice = _pick_choice_ending_with(object_info, adetailer_type, detector_key, "hand_yolov8n.pt") or "bbox/hand_yolov8n.pt"
+                try:
+                    spec = ad_all.get(detector_key)
+                    choices = None
+                    if isinstance(spec, list):
+                        if spec and isinstance(spec[0], list):
+                            choices = [str(x) for x in spec[0]]
+                        elif len(spec) > 1 and isinstance(spec[1], dict) and isinstance(spec[1].get("choices"), list):
+                            choices = [str(x) for x in spec[1]["choices"]]
+                    if isinstance(choices, list) and choices and str(det_choice) not in choices:
+                        alt = None
+                        for c in choices:
+                            if str(c).lower().endswith("hand_yolov8n.pt"):
+                                alt = str(c)
+                                break
+                        det_choice = alt or str(choices[0])
+                except Exception:
+                    pass
+                inputs[detector_key] = det_choice
+
+            if "detection_hint" in ad_all:
+                inputs["detection_hint"] = "hand"
+            if "confidence" in ad_all:
+                inputs["confidence"] = 0.3
+            if "denoise" in ad_all:
+                inputs["denoise"] = 0.35
+            if "steps" in ad_all:
+                inputs["steps"] = 20
+            if "seed" in ad_all:
+                inputs["seed"] = random.randint(0, 2**32 - 1)
+
+            if "clip" in ad_req:
                 inputs["clip"] = [ckpt_id, 1]
-                
+
             workflow[adetailer_id] = {
                 "inputs": inputs,
                 "class_type": adetailer_type,
                 "_meta": {"title": "Hand Detailer (ADetailer)"}
             }
-            
-            # Reconecta o SaveImage para pegar do ADetailer em vez do VAE
+
             workflow[save_id]["inputs"]["images"] = [adetailer_id, 0]
             print(f"[HandsDetailer] Injected ADetailer (node {adetailer_id})")
             return workflow
 
-    # Fallback para o sistema antigo de Ultralytics (mais complexo/menos confiável se ADetailer não estiver instalado)
     vae_decode_id = _find_first_node_id(workflow, "VAEDecode")
     save_id = _find_first_node_id(workflow, "SaveImage")
     if not vae_decode_id or not save_id:
@@ -656,7 +793,25 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         return workflow
 
     provider_id = _next_numeric_node_id(workflow)
-    model_choice = _pick_choice_ending_with(object_info, provider_type, "model_name", "hand_yolo8n.pt") or "bbox/hand_yolo8n.pt"
+    try:
+        spec = _node_all_inputs(object_info, provider_type).get("model_name")
+        choices = None
+        if isinstance(spec, list):
+            if spec and isinstance(spec[0], list):
+                choices = [str(x) for x in spec[0]]
+            elif len(spec) > 1 and isinstance(spec[1], dict) and isinstance(spec[1].get("choices"), list):
+                choices = [str(x) for x in spec[1]["choices"]]
+        model_choice = _pick_choice_ending_with(object_info, provider_type, "model_name", "hand_yolov8n.pt") or "bbox/hand_yolov8n.pt"
+        if isinstance(choices, list) and choices:
+            if str(model_choice) not in choices:
+                alt = None
+                for c in choices:
+                    if str(c).lower().endswith("hand_yolov8n.pt"):
+                        alt = str(c)
+                        break
+                model_choice = alt or str(choices[0])
+    except Exception:
+        model_choice = _pick_choice_ending_with(object_info, provider_type, "model_name", "hand_yolov8n.pt") or "bbox/hand_yolov8n.pt"
     workflow[provider_id] = {"inputs": {"model_name": model_choice}, "class_type": provider_type}
     provider_outputs = _node_outputs(object_info, provider_type)
     bbox_out_idx = 0
@@ -665,28 +820,52 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
             bbox_out_idx = i
             break
 
-    bbox_segs_type = _pick_node_type_by_predicate(
-        object_info,
-        lambda k, v: (
-            "bbox" in k.lower()
-            and "segs" in k.lower()
-            and "segs" in [str(x).upper() for x in (v.get("output") or [])]
-            and isinstance((v.get("input") or {}).get("required", {}), dict)
-        ),
-    )
+    def _inputs_has_type(req: dict, type_substr: str) -> bool:
+        ts = str(type_substr).upper()
+        for _k, spec in (req or {}).items():
+            if not isinstance(spec, list) or not spec:
+                continue
+            if ts in str(spec[0]).upper():
+                return True
+        return False
+    
+    def _find_input_key_by_type(all_inputs: dict, type_substr: str) -> str | None:
+        ts = str(type_substr).upper()
+        for k, spec in (all_inputs or {}).items():
+            if not isinstance(k, str) or not isinstance(spec, list) or not spec:
+                continue
+            if ts in str(spec[0]).upper():
+                return k
+        return None
+
+    bbox_segs_candidates: list[tuple[int, str]] = []
+    for k, v in object_info.items():
+        if not isinstance(k, str) or not isinstance(v, dict):
+            continue
+        outs = [str(x).upper() for x in (v.get("output") or [])] if isinstance(v.get("output"), list) else []
+        if "SEGS" not in outs:
+            continue
+        req = (v.get("input") or {}).get("required", {})
+        if not isinstance(req, dict):
+            continue
+        all_inp = _node_all_inputs(object_info, k)
+        if not _inputs_has_type(all_inp, "IMAGE"):
+            continue
+        if not _inputs_has_type(all_inp, "BBOX_DETECTOR"):
+            continue
+        score = len(req)
+        bbox_segs_candidates.append((score, k))
+    bbox_segs_candidates.sort(key=lambda x: x[0])
+    bbox_segs_type = bbox_segs_candidates[0][1] if bbox_segs_candidates else None
     if not bbox_segs_type:
         print("[HandsDetailer] skipped (no bbox->segs node)")
         return workflow
 
     bbox_segs_id = _next_numeric_node_id(workflow)
-    bbox_req = _node_required_inputs(object_info, bbox_segs_type)
+    bbox_req = _node_all_inputs(object_info, bbox_segs_type)
     bbox_inputs: dict = {}
-    image_key = "image" if "image" in bbox_req else None
-    det_key = None
-    for cand in ("bbox_detector", "detector", "bbox", "BBOX_DETECTOR"):
-        if cand in bbox_req:
-            det_key = cand
-            break
+    image_key = _find_input_key_by_type(bbox_req, "IMAGE")
+    det_key = _find_input_key_by_type(bbox_req, "BBOX_DETECTOR")
     if image_key:
         bbox_inputs[image_key] = base_image_ref
     if det_key:
@@ -720,15 +899,34 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
             segs_out_idx = i
             break
 
-    detailer_type = _pick_node_type_by_predicate(
-        object_info,
-        lambda k, v: (
-            "detailer" in k.lower()
-            and "segs" in k.lower()
-            and "image" in [str(x).upper() for x in (v.get("output") or [])]
-            and isinstance((v.get("input") or {}).get("required", {}), dict)
-        ),
-    )
+    detailer_candidates: list[tuple[int, str]] = []
+    for k, v in object_info.items():
+        if not isinstance(k, str) or not isinstance(v, dict):
+            continue
+        kl = k.lower()
+        if "preview" in kl:
+            continue
+        outs = [str(x).upper() for x in (v.get("output") or [])] if isinstance(v.get("output"), list) else []
+        if "IMAGE" not in outs:
+            continue
+        req = (v.get("input") or {}).get("required", {})
+        if not isinstance(req, dict):
+            continue
+        all_inp = _node_all_inputs(object_info, k)
+        if not _inputs_has_type(all_inp, "SEGS"):
+            continue
+        penalty = 0
+        for bad in ("noise_mask", "wildcard"):
+            if bad in req:
+                penalty += 50
+        if "detailer" not in kl and "for_each" not in kl:
+            penalty += 5
+        if "detailer" in kl:
+            penalty -= 15
+        score = len(req) + penalty
+        detailer_candidates.append((score, k))
+    detailer_candidates.sort(key=lambda x: x[0])
+    detailer_type = detailer_candidates[0][1] if detailer_candidates else None
     if not detailer_type:
         print("[HandsDetailer] skipped (no detailer segs node)")
         return workflow
@@ -742,10 +940,71 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
             break
 
     detailer_inputs: dict = {}
-    if "image" in detailer_req:
-        detailer_inputs["image"] = base_image_ref
-    if "segs" in detailer_req:
-        detailer_inputs["segs"] = [bbox_segs_id, segs_out_idx]
+    ksampler_id = _find_first_node_id(workflow, "KSampler")
+    ks_inputs = (workflow.get(ksampler_id) or {}).get("inputs") if ksampler_id else {}
+    vae_inputs = (workflow.get(vae_decode_id) or {}).get("inputs") if vae_decode_id else {}
+    clip_ids = _pick_clip_text_nodes(workflow)
+    clip_ref = None
+    if clip_ids:
+        ci = workflow.get(clip_ids[0]) or {}
+        cin = ci.get("inputs") if isinstance(ci, dict) else {}
+        if isinstance(cin, dict) and isinstance(cin.get("clip"), list):
+            clip_ref = cin.get("clip")
+
+    def _first_choice(spec: object) -> object | None:
+        if not isinstance(spec, list) or len(spec) < 2:
+            return None
+        meta = spec[1]
+        if not isinstance(meta, dict):
+            return None
+        choices = meta.get("choices")
+        if isinstance(choices, list) and choices:
+            return choices[0]
+        return None
+
+    for key, spec in detailer_req.items():
+        if key in detailer_inputs:
+            continue
+        st = str(spec[0]).upper() if isinstance(spec, list) and spec else ""
+        if st == "IMAGE":
+            detailer_inputs[key] = base_image_ref
+            continue
+        if st == "SEGS":
+            detailer_inputs[key] = [bbox_segs_id, segs_out_idx]
+            continue
+        if key == "model" and isinstance(ks_inputs, dict) and isinstance(ks_inputs.get("model"), list):
+            detailer_inputs[key] = ks_inputs.get("model")
+            continue
+        if key == "positive" and isinstance(ks_inputs, dict) and isinstance(ks_inputs.get("positive"), list):
+            detailer_inputs[key] = ks_inputs.get("positive")
+            continue
+        if key == "negative" and isinstance(ks_inputs, dict) and isinstance(ks_inputs.get("negative"), list):
+            detailer_inputs[key] = ks_inputs.get("negative")
+            continue
+        if key == "vae" and isinstance(vae_inputs, dict) and isinstance(vae_inputs.get("vae"), list):
+            detailer_inputs[key] = vae_inputs.get("vae")
+            continue
+        if key == "clip" and isinstance(clip_ref, list):
+            detailer_inputs[key] = clip_ref
+            continue
+        if key == "seed":
+            detailer_inputs[key] = int(params.get("seed") or random.randint(0, 2**32 - 1))
+            continue
+        if key == "feather":
+            detailer_inputs[key] = int(_read_env_int("HANDS_DETAILER_FEATHER", 5))
+            continue
+        if key == "cycle":
+            detailer_inputs[key] = int(_read_env_int("HANDS_DETAILER_CYCLE", 1))
+            continue
+        if key == "wildcard":
+            detailer_inputs[key] = ""
+            continue
+        if key == "force_inpaint":
+            detailer_inputs[key] = False
+            continue
+        choice = _first_choice(spec)
+        if choice is not None:
+            detailer_inputs[key] = choice
     if "guide_size" in detailer_req:
         detailer_inputs["guide_size"] = 384.0
     if "max_size" in detailer_req:
@@ -770,7 +1029,7 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         except Exception:
             detailer_inputs["denoise"] = 0.48
 
-    if pipe_key:
+    if pipe_key and pipe_key not in detailer_inputs:
         pipe_output_kind = "DETAILER_PIPE"
         pipe_builder_type = _pick_node_type_by_predicate(
             object_info,
@@ -856,6 +1115,60 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         },
     )
     return workflow
+
+
+def _ensure_ultralytics_bbox_models(cache_root: str):
+    import os
+    import shutil
+    from huggingface_hub import hf_hub_download
+
+    bbox_dir = "/root/comfy/ComfyUI/models/ultralytics/bbox"
+    os.makedirs(bbox_dir, exist_ok=True)
+
+    for bbox_name in ["hand_yolov8n.pt", "face_yolov8n.pt"]:
+        bbox_from = f"{cache_root}/bbox/{bbox_name}"
+        bbox_dest = f"{bbox_dir}/{bbox_name}"
+        try:
+            if not os.path.exists(bbox_from):
+                token = _read_env_str("HF_TOKEN", "")
+                model_path = hf_hub_download(
+                    repo_id="Bingsu/adetailer",
+                    filename=bbox_name,
+                    cache_dir=cache_root,
+                    token=token if token else None,
+                )
+                os.makedirs(f"{cache_root}/bbox", exist_ok=True)
+                shutil.copyfile(model_path, bbox_from)
+            try:
+                if os.path.exists(bbox_from) and os.path.getsize(bbox_from) < 1024 * 1024:
+                    import requests
+
+                    url = f"https://huggingface.co/Bingsu/adetailer/resolve/main/{bbox_name}"
+                    os.makedirs(f"{cache_root}/bbox", exist_ok=True)
+                    with requests.get(url, stream=True, timeout=120) as r:
+                        r.raise_for_status()
+                        with open(bbox_from, "wb") as f:
+                            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                                if chunk:
+                                    f.write(chunk)
+            except Exception:
+                pass
+            os.makedirs(bbox_dir, exist_ok=True)
+            shutil.copyfile(bbox_from, bbox_dest)
+            try:
+                nested_dir = f"{bbox_dir}/bbox"
+                os.makedirs(nested_dir, exist_ok=True)
+                shutil.copyfile(bbox_from, f"{nested_dir}/{bbox_name}")
+            except Exception:
+                pass
+            try:
+                ultralytics_root = "/root/comfy/ComfyUI/models/ultralytics"
+                os.makedirs(ultralytics_root, exist_ok=True)
+                shutil.copyfile(bbox_from, f"{ultralytics_root}/{bbox_name}")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[Assets] Erro ao garantir Ultralytics bbox {bbox_name}: {e}")
 
 
 def _ref_matches(v: object, node_id: str, output_index: int) -> bool:
@@ -1005,6 +1318,18 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
     filename_node_id = _read_env_str("WORKFLOW_FILENAME_NODE_ID", "")
     requested_workflow = str(params.get("workflow") or "").strip().lower()
 
+    if requested_workflow == "pose":
+        try:
+            dwpose_res = int(params.get("dwpose_resolution") or _read_env_int("POSE_DWPOSE_RESOLUTION", 512))
+        except Exception:
+            dwpose_res = 512
+        for node in workflow.values():
+            if not isinstance(node, dict) or node.get("class_type") != "DWPreprocessor":
+                continue
+            inputs = node.get("inputs")
+            if isinstance(inputs, dict) and "resolution" in inputs:
+                inputs["resolution"] = int(dwpose_res)
+
     clip_ids = _pick_clip_text_nodes(workflow)
     pos_id = prompt_node_id if (prompt_node_id and prompt_node_id in workflow) else (clip_ids[0] if clip_ids else "")
     neg_id = negative_node_id if (negative_node_id and negative_node_id in workflow) else (clip_ids[1] if len(clip_ids) > 1 else "")
@@ -1023,7 +1348,6 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
     prompt_lower = prompt.lower()
     prompt_explicitly_hides_hands = ("no hands" in prompt_lower) or ("hands out of frame" in prompt_lower) or ("no fingers" in prompt_lower)
     disable_hand_fix = str(params.get("disable_hand_fix") or "").strip().lower() in ("1", "true", "yes", "y", "on")
-    # Agora só desabilita se realmente NÃO for anal_hands/anal_hands_hold (esses PRECISAM de correção)
     disable_hand_fix_effective = disable_hand_fix or (
         pose_type_lower.startswith(("anal", "pussy")) 
         and not pose_type_lower.startswith(("anal_hands")) 
@@ -1034,25 +1358,19 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
         prompt = _append_prompt_fragment(prompt, HANDS_POSITIVE_PROMPT)
         negative = _append_prompt_fragment(negative, HANDS_NEGATIVE_PROMPT)
         try:
-            # Aumenta strength para garantir que o Lora pegue (antes estava 0.7, pode ser pouco para close-ups)
             hands_strength = float(params.get("hands_lora_strength") or _read_env_str("HANDS_LORA_STRENGTH", "0.8"))
         except Exception:
             hands_strength = 0.8
         
-        # Chama ensure_hands_lora que injeta o nó SE não existir, e reconecta o fluxo
         hands_node_id = _ensure_hands_lora(workflow, hands_strength)
         
-        # Se injetou, precisamos garantir que o fluxo passe por ele
         if hands_node_id:
-            # Reconecta KSampler ou qualquer nó que use MODEL para usar o output do Lora de mãos
-            # Procura nós consumidores de MODEL (KSampler, IPAdapter, ControlNetApply, etc)
             upstream_model_src = _find_first_node_id(workflow, "CheckpointLoaderSimple")
             if upstream_model_src:
                 for nid, node in workflow.items():
                     if str(nid) == str(hands_node_id): continue
                     if "inputs" not in node: continue
                     inputs = node["inputs"]
-                    # Se o nó está plugado no Checkpoint original, move para o Lora de Mãos
                     if _ref_matches(inputs.get("model"), upstream_model_src, 0):
                         inputs["model"] = [hands_node_id, 0]
                         print(f"[Assets] Reconectado node {nid} (model) para Hands Lora {hands_node_id}")
@@ -1111,12 +1429,46 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
                 inputs["filename_prefix"] = str(params.get("filename_prefix") or "")
                 break
 
-    # Sobrescreve o checkpoint se definido no ENV
-    # env_ckpt = _read_env_str("CHECKPOINT_FILENAME", "")
-    env_ckpt = "realvisxlV50_v50LightningBakedvae.safetensors" # HARDCODED
+    env_ckpt = _read_env_str("CHECKPOINT_FILENAME", "").strip()
+    if not env_ckpt:
+        try:
+            for node in workflow.values():
+                if not isinstance(node, dict):
+                    continue
+                if node.get("class_type") == "CheckpointLoaderSimple":
+                    inputs = node.get("inputs")
+                    if isinstance(inputs, dict):
+                        env_ckpt = str(inputs.get("ckpt_name") or "").strip()
+                    break
+        except Exception:
+            env_ckpt = ""
+    if not env_ckpt:
+        try:
+            ckpt_dir = "/root/comfy/ComfyUI/models/checkpoints"
+            if os.path.exists(ckpt_dir):
+                candidates = [f for f in os.listdir(ckpt_dir) if str(f).lower().endswith(".safetensors")]
+                preferred = None
+                for f in candidates:
+                    fl = str(f).lower()
+                    if ("realvisxl" in fl or "juggernaut" in fl) and "lightning" not in fl and "turbo" not in fl:
+                        preferred = f
+                        break
+                if not preferred:
+                    for f in candidates:
+                        fl = str(f).lower()
+                        if "lightning" not in fl and "turbo" not in fl:
+                            preferred = f
+                            break
+                if not preferred and candidates:
+                    preferred = candidates[0]
+                env_ckpt = str(preferred or "").strip()
+        except Exception:
+            env_ckpt = ""
+
     if env_ckpt:
         for node in workflow.values():
-            if not isinstance(node, dict): continue
+            if not isinstance(node, dict):
+                continue
             if node.get("class_type") == "CheckpointLoaderSimple":
                 inputs = node.get("inputs")
                 if isinstance(inputs, dict) and "ckpt_name" in inputs:
@@ -1127,11 +1479,37 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
         ckpt_lower = str(env_ckpt or "").lower()
         if "lightning" in ckpt_lower:
             if params.get("steps") is None:
-                params["steps"] = int(_read_env_int("LIGHTNING_STEPS", 6))
+                params["steps"] = int(_read_env_int("LIGHTNING_STEPS", 8))
             if params.get("cfg") is None:
-                params["cfg"] = float(_read_env_str("LIGHTNING_CFG", "1.6"))
+                params["cfg"] = float(_read_env_str("LIGHTNING_CFG", "2.0"))
             if params.get("control_strength") is None:
-                params["control_strength"] = float(_read_env_str("LIGHTNING_CONTROL_STRENGTH", "0.65"))
+                params["control_strength"] = float(_read_env_str("LIGHTNING_CONTROL_STRENGTH", "0.6"))
+    except Exception:
+        pass
+
+    try:
+        ckpt_lower = str(env_ckpt or "").lower()
+        is_xl = ("xl" in ckpt_lower) or ("sdxl" in ckpt_lower) or ("realvisxl" in ckpt_lower)
+        vae_filename = _read_env_str("VAE_FILENAME", "sdxl.vae.safetensors") if is_xl else _read_env_str("VAE_FILENAME", "")
+        if vae_filename:
+            vae_loader_id = _find_first_node_id(workflow, "VAELoader")
+            if not vae_loader_id:
+                vae_loader_id = _next_numeric_node_id(workflow)
+                workflow[vae_loader_id] = {
+                    "inputs": {"vae_name": vae_filename},
+                    "class_type": "VAELoader",
+                }
+            else:
+                workflow[vae_loader_id].setdefault("inputs", {})["vae_name"] = vae_filename
+
+            for node in workflow.values():
+                if not isinstance(node, dict):
+                    continue
+                inputs = node.get("inputs")
+                if not isinstance(inputs, dict):
+                    continue
+                if "vae" in inputs:
+                    inputs["vae"] = [vae_loader_id, 0]
     except Exception:
         pass
 
@@ -1223,6 +1601,19 @@ class ComfyUIService:
         print(f"[app] Launching ComfyUI: {launch}")
         try:
             self._log_file = open(self._log_path, "a", encoding="utf-8", buffering=1)
+            try:
+                bbox_dir = "/root/comfy/ComfyUI/models/ultralytics/bbox"
+                entries = []
+                if os.path.exists(bbox_dir):
+                    for f in sorted(os.listdir(bbox_dir))[:50]:
+                        p = f"{bbox_dir}/{f}"
+                        try:
+                            entries.append({"file": f, "bytes": os.path.getsize(p)})
+                        except Exception:
+                            entries.append({"file": f, "bytes": None})
+                self._log_file.write(f"[AssetsDiag] ultralytics_bbox={bbox_dir} entries={entries}\n")
+            except Exception:
+                pass
             subprocess.Popen(launch, cwd="/root/comfy/ComfyUI", stdout=self._log_file, stderr=subprocess.STDOUT)
         except Exception:
             subprocess.Popen(launch, cwd="/root/comfy/ComfyUI")
@@ -1255,8 +1646,8 @@ class ComfyUIService:
 
     @modal.method()
     def generate(self, payload: dict) -> bytes:
-        # Debug de Runtime para ControlNet
         try:
+            cache_root = _read_env_str("MODEL_CACHE_DIR", "/cache")
             cn_dir = "/root/comfy/ComfyUI/models/controlnet"
             if os.path.exists(cn_dir):
                 files = os.listdir(cn_dir)
@@ -1269,8 +1660,37 @@ class ComfyUIService:
             else:
                 print(f"[Generate][Debug] Diretório {cn_dir} NÃO existe!")
             
+            vae_dir = "/root/comfy/ComfyUI/models/vae"
+            if os.path.exists(vae_dir):
+                vae_files = os.listdir(vae_dir)
+                print(f"[Generate][Debug] Arquivos em {vae_dir}: {vae_files}")
+                vae_path = f"{vae_dir}/sdxl.vae.safetensors"
+                if os.path.exists(vae_path):
+                    print(f"[Generate][Debug] VAE sdxl.vae.safetensors size: {os.path.getsize(vae_path)} bytes")
+            else:
+                print(f"[Generate][Debug] Diretório {vae_dir} NÃO existe!")
+
+            bbox_dir = "/root/comfy/ComfyUI/models/ultralytics/bbox"
+            if os.path.exists(bbox_dir):
+                bbox_files = os.listdir(bbox_dir)
+                print(f"[Generate][Debug] Arquivos em {bbox_dir}: {bbox_files}")
+                bbox_path = f"{bbox_dir}/hand_yolov8n.pt"
+                if os.path.exists(bbox_path):
+                    print(f"[Generate][Debug] BBox hand_yolov8n.pt size: {os.path.getsize(bbox_path)} bytes")
+                bbox_nested = f"{bbox_dir}/bbox"
+                if os.path.exists(bbox_nested):
+                    print(f"[Generate][Debug] Arquivos em {bbox_nested}: {os.listdir(bbox_nested)}")
+            else:
+                print(f"[Generate][Debug] Diretório {bbox_dir} NÃO existe!")
+            try:
+                if not os.path.exists(bbox_dir) or not os.listdir(bbox_dir):
+                    _ensure_ultralytics_bbox_models(cache_root)
+                    if os.path.exists(bbox_dir):
+                        print(f"[Generate][Debug] Arquivos em {bbox_dir} (após ensure): {os.listdir(bbox_dir)}")
+            except Exception as e:
+                print(f"[Generate][Debug] Falha garantindo bbox: {e}")
         except Exception as e:
-            print(f"[Generate][Debug] Erro ao listar controlnets: {e}")
+            print(f"[Generate][Debug] Erro no diagnóstico de assets: {e}")
 
         requested = str((payload or {}).get("workflow") or "").strip().lower()
         use_scene = False
