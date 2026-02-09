@@ -355,6 +355,39 @@ def _ensure_assets_present():
                 subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
         print("[Assets] ipadapter", {"default": ip_default, "pack": ip_pack, "env": _read_env_str("IPADAPTER_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
 
+    hands_lora_filename = "Better hands - SDXL v2.0.safetensors"
+    hands_lora_from_volume = f"{cache_root}/loras/{hands_lora_filename}"
+    hands_lora_dest = f"{lora_dir}/{hands_lora_filename}"
+    if not link_if_exists(hands_lora_from_volume, hands_lora_dest):
+        token = _read_env_str("HF_TOKEN", "")
+        try:
+            model_path = hf_hub_download(
+                repo_id="OedoSoldier/better-hands-sdxl",
+                filename="Better hands - SDXL v2.0.safetensors",
+                cache_dir=cache_root,
+                token=token if token else None,
+            )
+            subprocess.run(f"ln -sf {model_path} {hands_lora_dest}", shell=True, check=True)
+        except Exception as e:
+            print(f"Erro baixando Better Hands Lora: {e}")
+
+    bbox_filename = "hand_yolov8n.pt"
+    bbox_from_volume = f"{cache_root}/bbox/{bbox_filename}"
+    bbox_dest = f"{bbox_dir}/{bbox_filename}"
+    if not link_if_exists(bbox_from_volume, bbox_dest):
+        token = _read_env_str("HF_TOKEN", "")
+        try:
+            # Baixando do repo do impact pack ou similar
+            model_path = hf_hub_download(
+                repo_id="Bingsu/adetailer",
+                filename=bbox_filename,
+                cache_dir=cache_root,
+                token=token if token else None,
+            )
+            subprocess.run(f"ln -sf {model_path} {bbox_dest}", shell=True, check=True)
+        except Exception as e:
+            print(f"Erro baixando Hand Yolo Bbox: {e}")
+
     # ControlNet OpenPose
     cn_filename = "OpenPoseXL2.safetensors"
     cn_from_volume = f"{cache_root}/controlnet/{cn_filename}"
@@ -538,13 +571,57 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
     if _read_env_str("DISABLE_HAND_DETAILER", "").strip().lower() in ("1", "true", "yes", "y", "on"):
         return workflow
 
+    # Verifica se deve aplicar o detailer
     requested_workflow = str(params.get("workflow") or "").strip().lower()
     prompt_text = _read_workflow_prompt_text(workflow).lower()
     always = _read_env_str("HANDS_DETAILER_ALWAYS", "false").strip().lower() in ("1", "true", "yes", "y", "on")
-    should = always or requested_workflow in ("pack",) or ("hand" in prompt_text) or ("hands" in prompt_text)
+    should = always or requested_workflow in ("pose", "pack") or ("hand" in prompt_text) or ("hands" in prompt_text)
+    
     if not should:
         return workflow
 
+    # Procura node ADetailer (mais simples e eficaz se disponível)
+    adetailer_type = "ADetailer" if "ADetailer" in object_info else None
+    
+    # Se tiver ADetailer, usa ele (rota preferencial)
+    if adetailer_type:
+        vae_decode_id = _find_first_node_id(workflow, "VAEDecode")
+        save_id = _find_first_node_id(workflow, "SaveImage")
+        ckpt_id = _find_first_node_id(workflow, "CheckpointLoaderSimple")
+        
+        if vae_decode_id and save_id and ckpt_id:
+            adetailer_id = _next_numeric_node_id(workflow)
+            
+            # Inputs do ADetailer
+            inputs = {
+                "image": [vae_decode_id, 0],
+                "model": [ckpt_id, 0], # Precisa do modelo base para inpainting
+                "positive": "perfect hands, five fingers per hand, detailed fingers, no deformities, anatomically correct",
+                "negative": "deformed hands, extra fingers, missing fingers, fused fingers, bad anatomy, polydactyly, six fingers",
+                "detection_hint": "hand",
+                "bbox_detector": "hand_yolov8n.pt",
+                "confidence": 0.3,
+                "denoise": 0.35, # Denoise baixo para preservar coerência, mas alto o suficiente para corrigir
+                "steps": 20,
+                "seed": random.randint(0, 2**32 - 1)
+            }
+            
+            # Adiciona clip se disponível (opcional, mas bom)
+            if "clip" in _node_required_inputs(object_info, adetailer_type):
+                inputs["clip"] = [ckpt_id, 1]
+                
+            workflow[adetailer_id] = {
+                "inputs": inputs,
+                "class_type": adetailer_type,
+                "_meta": {"title": "Hand Detailer (ADetailer)"}
+            }
+            
+            # Reconecta o SaveImage para pegar do ADetailer em vez do VAE
+            workflow[save_id]["inputs"]["images"] = [adetailer_id, 0]
+            print(f"[HandsDetailer] Injected ADetailer (node {adetailer_id})")
+            return workflow
+
+    # Fallback para o sistema antigo de Ultralytics (mais complexo/menos confiável se ADetailer não estiver instalado)
     vae_decode_id = _find_first_node_id(workflow, "VAEDecode")
     save_id = _find_first_node_id(workflow, "SaveImage")
     if not vae_decode_id or not save_id:
@@ -926,16 +1003,43 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
     prompt_lower = prompt.lower()
     prompt_explicitly_hides_hands = ("no hands" in prompt_lower) or ("hands out of frame" in prompt_lower) or ("no fingers" in prompt_lower)
     disable_hand_fix = str(params.get("disable_hand_fix") or "").strip().lower() in ("1", "true", "yes", "y", "on")
-    disable_hand_fix_effective = disable_hand_fix or (pose_type_lower.startswith(("anal", "pussy")) and prompt_explicitly_hides_hands)
+    # Agora só desabilita se realmente NÃO for anal_hands/anal_hands_hold (esses PRECISAM de correção)
+    disable_hand_fix_effective = disable_hand_fix or (
+        pose_type_lower.startswith(("anal", "pussy")) 
+        and not pose_type_lower.startswith(("anal_hands")) 
+        and prompt_explicitly_hides_hands
+    )
 
     if not disable_hand_fix_effective:
         prompt = _append_prompt_fragment(prompt, HANDS_POSITIVE_PROMPT)
         negative = _append_prompt_fragment(negative, HANDS_NEGATIVE_PROMPT)
         try:
-            hands_strength = float(params.get("hands_lora_strength") or _read_env_str("HANDS_LORA_STRENGTH", "0.7"))
+            # Aumenta strength para garantir que o Lora pegue (antes estava 0.7, pode ser pouco para close-ups)
+            hands_strength = float(params.get("hands_lora_strength") or _read_env_str("HANDS_LORA_STRENGTH", "0.8"))
         except Exception:
-            hands_strength = 0.7
+            hands_strength = 0.8
+        
+        # Chama ensure_hands_lora que injeta o nó SE não existir, e reconecta o fluxo
         hands_node_id = _ensure_hands_lora(workflow, hands_strength)
+        
+        # Se injetou, precisamos garantir que o fluxo passe por ele
+        if hands_node_id:
+            # Reconecta KSampler ou qualquer nó que use MODEL para usar o output do Lora de mãos
+            # Procura nós consumidores de MODEL (KSampler, IPAdapter, ControlNetApply, etc)
+            upstream_model_src = _find_first_node_id(workflow, "CheckpointLoaderSimple")
+            if upstream_model_src:
+                for nid, node in workflow.items():
+                    if str(nid) == str(hands_node_id): continue
+                    if "inputs" not in node: continue
+                    inputs = node["inputs"]
+                    # Se o nó está plugado no Checkpoint original, move para o Lora de Mãos
+                    if _ref_matches(inputs.get("model"), upstream_model_src, 0):
+                        inputs["model"] = [hands_node_id, 0]
+                        print(f"[Assets] Reconectado node {nid} (model) para Hands Lora {hands_node_id}")
+                    if _ref_matches(inputs.get("clip"), upstream_model_src, 1):
+                        inputs["clip"] = [hands_node_id, 1]
+                        print(f"[Assets] Reconectado node {nid} (clip) para Hands Lora {hands_node_id}")
+            
     else:
         hands_node_id = None
 
