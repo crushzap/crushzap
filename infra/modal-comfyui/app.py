@@ -102,7 +102,8 @@ def _download_default_model():
 
     def link_if_exists(src_path: str, dest_path: str) -> bool:
         if os.path.exists(src_path):
-            subprocess.run(f"ln -sf {src_path} {dest_path}", shell=True, check=True)
+            # Usar aspas para suportar caminhos com espaços
+            subprocess.run(f'ln -sf "{src_path}" "{dest_path}"', shell=True, check=True)
             return True
         return False
 
@@ -278,9 +279,9 @@ def _ensure_assets_present():
                 if not os.path.exists(dest):
                     shutil.copyfile(src, dest)
                 else:
-                    subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                    subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
             except Exception:
-                subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
         print("[Assets] checkpoint", {"default": ckpt_default, "pack": ckpt_pack, "env": _read_env_str("CHECKPOINT_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
 
     if lora_filename:
@@ -291,9 +292,9 @@ def _ensure_assets_present():
                 if not os.path.exists(dest):
                     shutil.copyfile(src, dest)
                 else:
-                    subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                    subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
             except Exception:
-                subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
         print("[Assets] lora", {"default": lora_default, "pack": lora_pack, "env": _read_env_str("LORA_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
 
     hands_src = f"{cache_root}/loras/{HANDS_LORA_FILENAME}"
@@ -336,9 +337,9 @@ def _ensure_assets_present():
                 if not os.path.exists(dest):
                     shutil.copyfile(src, dest)
                 else:
-                    subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                    subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
             except Exception:
-                subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
         print("[Assets] clip_vision", {"default": clip_default, "pack": clip_pack, "env": _read_env_str("CLIP_VISION_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
 
     if ipadapter_filename:
@@ -350,9 +351,9 @@ def _ensure_assets_present():
                 if not os.path.exists(dest):
                     shutil.copyfile(src, dest)
                 else:
-                    subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                    subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
             except Exception:
-                subprocess.run(f"ln -sf {src} {dest}", shell=True, check=True)
+                subprocess.run(f'ln -sf "{src}" "{dest}"', shell=True, check=True)
         print("[Assets] ipadapter", {"default": ip_default, "pack": ip_pack, "env": _read_env_str("IPADAPTER_FILENAME", ""), "src_exists": os.path.exists(src), "dest_exists": os.path.exists(dest)})
 
     hands_lora_filename = "Better hands - SDXL v2.0.safetensors"
@@ -367,7 +368,13 @@ def _ensure_assets_present():
                 cache_dir=cache_root,
                 token=token if token else None,
             )
-            subprocess.run(f"ln -sf {model_path} {hands_lora_dest}", shell=True, check=True)
+            # Copia para o volume se não existir lá (cache persistente)
+            if not os.path.exists(hands_lora_from_volume):
+                os.makedirs(f"{cache_root}/loras", exist_ok=True)
+                shutil.copyfile(model_path, hands_lora_from_volume)
+            
+            # Linka para o destino
+            subprocess.run(f'ln -sf "{model_path}" "{hands_lora_dest}"', shell=True, check=True)
         except Exception as e:
             print(f"Erro baixando Better Hands Lora: {e}")
 
