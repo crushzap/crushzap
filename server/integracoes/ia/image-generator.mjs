@@ -319,10 +319,17 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
 
   // 1. Tentar Modal
   try {
-    const controlStrength =
+    let controlStrength =
       selectedWorkflow === 'pose' && selectedPoseImage
         ? (readEnvNumber('MODAL_CONTROLNET_STRENGTH') ?? 0.95)
         : undefined
+
+    // Reduz a força do ControlNet para poses onde a interação de mãos é complexa (evita "mãos de boneco" ou duplicação)
+    if (typeof controlStrength === 'number' && (poseType === 'anal_hands' || poseType === 'anal_hands_hold')) {
+        controlStrength = 0.55
+        console.log('[ImageGenerator] Reduzindo ControlNet strength para anal_hands:', controlStrength)
+    }
+
     if (selectedWorkflow === 'inpainting' && refsParaModal.length) {
       const inpaintWeight = readEnvNumber('MODAL_INPAINT_IPADAPTER_WEIGHT')
       const resolved = Number.isFinite(Number(inpaintWeight)) ? Number(inpaintWeight) : 0.6
