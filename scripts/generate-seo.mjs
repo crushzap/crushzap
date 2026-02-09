@@ -69,7 +69,7 @@ async function writeFileIfChanged(filePath, nextContent) {
 }
 
 const siteUrl = normalizeSiteUrl(process.env.SITE_URL || process.env.VITE_SITE_URL);
-const routes = ["/"];
+const routes = ["/", "/termos-de-uso", "/politica-de-privacidade", "/lgpd"];
 
 const sitemapXml = buildSitemapXml({ siteUrl, routes });
 const robotsTxt = buildRobotsTxt({ siteUrl });
@@ -77,4 +77,3 @@ const robotsTxt = buildRobotsTxt({ siteUrl });
 const publicDir = path.resolve(process.cwd(), "public");
 await writeFileIfChanged(path.join(publicDir, "sitemap.xml"), sitemapXml);
 await writeFileIfChanged(path.join(publicDir, "robots.txt"), robotsTxt);
-

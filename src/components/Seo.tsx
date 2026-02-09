@@ -77,6 +77,33 @@ function computeSeo(pathname: string): SeoConfig {
     };
   }
 
+  if (path === "/termos-de-uso") {
+    return {
+      title: "Termos de Uso | CrushZap",
+      description: "Regras e condições de uso do CrushZap, incluindo elegibilidade e responsabilidades.",
+      robots: "index,follow,max-image-preview:large",
+      canonicalPath: "/termos-de-uso",
+    };
+  }
+
+  if (path === "/politica-de-privacidade") {
+    return {
+      title: "Política de Privacidade | CrushZap",
+      description: "Entenda como o CrushZap coleta, usa, compartilha e protege seus dados.",
+      robots: "index,follow,max-image-preview:large",
+      canonicalPath: "/politica-de-privacidade",
+    };
+  }
+
+  if (path === "/lgpd") {
+    return {
+      title: "LGPD | CrushZap",
+      description: "Informações sobre tratamento de dados e direitos do titular conforme a LGPD.",
+      robots: "index,follow,max-image-preview:large",
+      canonicalPath: "/lgpd",
+    };
+  }
+
   const protectedPrefixes = [
     "/dashboard",
     "/personas",
@@ -161,4 +188,3 @@ export function Seo() {
 
   return null;
 }
-

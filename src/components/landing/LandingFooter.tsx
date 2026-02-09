@@ -49,12 +49,15 @@ export function LandingFooter() {
           <div className="md:col-span-2">
             <p className="text-sm font-semibold text-foreground">Legal</p>
             <nav className="mt-4 flex flex-col gap-3 text-sm text-muted-foreground">
-              <a href="#" className="hover:text-foreground transition-colors">
+              <Link to="/termos-de-uso" className="hover:text-foreground transition-colors">
                 Termos de Uso
-              </a>
-              <a href="#" className="hover:text-foreground transition-colors">
+              </Link>
+              <Link to="/politica-de-privacidade" className="hover:text-foreground transition-colors">
                 Política de Privacidade
-              </a>
+              </Link>
+              <Link to="/lgpd" className="hover:text-foreground transition-colors">
+                LGPD
+              </Link>
             </nav>
           </div>
         </div>
@@ -69,4 +72,3 @@ export function LandingFooter() {
     </footer>
   );
 }
-

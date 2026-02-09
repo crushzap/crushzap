@@ -18,6 +18,9 @@ const Conversas = lazy(() => import("./pages/Conversas"));
 const Assinaturas = lazy(() => import("./pages/Assinaturas"));
 const Whatsapp = lazy(() => import("./pages/Whatsapp"));
 const Entrar = lazy(() => import("./pages/Entrar"));
+const TermosDeUso = lazy(() => import("./pages/TermosDeUso"));
+const PoliticaDePrivacidade = lazy(() => import("./pages/PoliticaDePrivacidade"));
+const Lgpd = lazy(() => import("./pages/Lgpd"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -34,6 +37,9 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/entrar" element={<Entrar />} />
+            <Route path="/termos-de-uso" element={<TermosDeUso />} />
+            <Route path="/politica-de-privacidade" element={<PoliticaDePrivacidade />} />
+            <Route path="/lgpd" element={<Lgpd />} />
             <Route element={<RequireAdmin />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/personas" element={<Personas />} />
