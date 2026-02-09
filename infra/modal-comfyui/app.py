@@ -227,6 +227,7 @@ def _extract_assets_from_workflow(workflow: dict) -> tuple[str, str, str, str]:
 
 
 def _ensure_assets_present():
+    print("[Assets] Checking assets...")
     import os
     import shutil
     import subprocess
@@ -1174,9 +1175,17 @@ class ComfyUIService:
 
     @modal.enter()
     def start(self):
-        print("[app]", {"version": APP_VERSION})
-        _ensure_assets_present()
+        print("[app] Starting container...", {"version": APP_VERSION})
+        try:
+            _ensure_assets_present()
+            print("[app] Assets ensured.")
+        except Exception as e:
+            print(f"[app] CRITICAL: _ensure_assets_present failed: {e}")
+            # Não relança a exceção para permitir que o ComfyUI tente subir mesmo assim (pode falhar depois, mas temos logs)
+            # raise e 
+
         launch = ["python", "main.py", "--listen", "127.0.0.1", "--port", str(self.port)]
+        print(f"[app] Launching ComfyUI: {launch}")
         try:
             self._log_file = open(self._log_path, "a", encoding="utf-8", buffering=1)
             subprocess.Popen(launch, cwd="/root/comfy/ComfyUI", stdout=self._log_file, stderr=subprocess.STDOUT)
