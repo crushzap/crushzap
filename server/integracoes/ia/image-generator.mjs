@@ -389,7 +389,7 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
 
   const modelKey = String(model || '').toLowerCase().trim()
   const fluxRequested = modelKey === 'flux'
-  const fluxEnabled = shouldAttemptFlux() || fluxRequested
+  const fluxEnabled = shouldAttemptFlux() || (fluxRequested && shouldUseFlux())
   const fluxSteps = readEnvNumber('FLUX_STEPS')
   const fluxCfg = readEnvNumber('FLUX_CFG')
   const fluxStepsResolved = fluxRequested ? (closeUp ? 16 : 18) : fluxSteps
