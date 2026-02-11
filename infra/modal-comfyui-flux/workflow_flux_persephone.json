@@ -1,0 +1,144 @@
+{
+  "1": {
+    "inputs": {
+      "model_name": "persephoneFluxNSFWSFW_20FP8.safetensors"
+    },
+    "class_type": "FluxLoader",
+    "_meta": {
+      "title": "Load Flux Persephone"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": "positive prompt, Perfect hand, Detailed hand, detailed perfect hands, five fingers per hand, anatomically correct fingers, no fused fingers, no extra digits, no missing fingers, realistic hand proportions, detailed knuckles and nails, natural hand pose, small delicate feminine hands, slender fingers, petite hands, short nails",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "ClipTextEncodeFlux",
+    "_meta": {
+      "title": "Positive"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "negative prompt",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "ClipTextEncodeFlux",
+    "_meta": {
+      "title": "Negative"
+    }
+  },
+  "4": {
+    "inputs": {
+      "width": 1024,
+      "height": 1536,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Latent"
+    }
+  },
+  "5": {
+    "inputs": {
+      "seed": 1337,
+      "steps": 25,
+      "cfg": 3.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "beta",
+      "denoise": 0.8,
+      "model": [
+        "10",
+        0
+      ],
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "FluxSampler",
+    "_meta": {
+      "title": "Flux Sampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeFlux",
+    "_meta": {
+      "title": "Decode"
+    }
+  },
+  "7": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "8": {
+    "inputs": {
+      "image": "ref.png",
+      "model": [
+        "1",
+        0
+      ],
+      "weight": 0.7
+    },
+    "class_type": "IPAdapterFlux",
+    "_meta": {
+      "title": "IPAdapter Flux"
+    }
+  },
+  "9": {
+    "inputs": {
+      "controlnet_name": "controlnet_flux.safetensors"
+    },
+    "class_type": "ControlNetLoaderFlux",
+    "_meta": {
+      "title": "ControlNet Flux"
+    }
+  },
+  "10": {
+    "inputs": {
+      "strength": 0.9,
+      "image": "pose.png",
+      "model": [
+        "8",
+        0
+      ],
+      "controlnet": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "ApplyControlNetFlux",
+    "_meta": {
+      "title": "Apply ControlNet Flux"
+    }
+  }
+}

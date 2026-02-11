@@ -148,6 +148,14 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
         "(face:1.5), (head:1.5), close-up, extreme close-up, macro lens, frame filled, anus, anal, pussy close-up, spreading pussy, spreading ass, fingering, inserted fingers, extra arms, extra hands, multiple hands, four hands, six fingers, 6 fingers, extra digit, bad hands, deformed hands, selfie, mirror selfie, phone, cellphone, holding phone, camera, mobile phone, male, text, watermark"
     },
     {
+      type: 'selfie_mirror_outfit_01',
+      triggers: ['selfie', 'espelho', 'mirror selfie', 'foto no espelho', 'foto espelho', 'mostra voce', 'mostra você', 'mostra vc', 'quero te ver', 'manda foto sua', 'envia foto sua', 'me mostra'],
+      prompt:
+        'mirror selfie in a bathroom, half-body, phone visible, casual outfit, fully clothed, natural indoor lighting, realistic skin texture, candid, amateur photo, handheld composition',
+      negative:
+        "nudity, nude, naked, pussy, vagina, anal, anus, asshole, butt close-up, ass close-up, breasts close-up, nipples close-up, spread, spreading, fingering, inserted fingers, sex toy, dildo, vibrator, blowjob, oral, doggystyle, on all fours, full body crop at feet, heavy makeup, glamour lighting, studio lighting, watermark, text, male"
+    },
+    {
       type: 'shibari',
       triggers: ['shibari', 'rope bondage', 'bondage', 'corda', 'cordas', 'amarrada', 'suspended', 'suspension'],
       prompt:
@@ -300,6 +308,24 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
   }
   if (!poseType && wantsShibari) {
     applyPoseTemplate('shibari')
+  }
+
+  // Detecção antecipada de pedidos genéricos de "mostra você"/selfie no espelho,
+  // com bloqueio se houver pedidos explícitos (anal/pussy/breasts/butt/oral/doggystyle).
+  if (!poseType) {
+    const userWantsAnalExplicit = hasAny(userLower, ['anal', 'cuzinho', 'cu', 'anus', 'rosca', 'asshole', 'butthole'])
+    const userWantsPussyExplicit = hasAny(userLower, ['bucet', 'xoxot', 'perereca', 'larissinha', 'bocet', 'vagina', 'pussy', 'clitoris', 'grelo', 'cunt'])
+    const userWantsBreastsExplicit = hasAny(userLower, ['seios', 'peitos', 'tetas', 'mamas', 'tits', 'breasts', 'mamilos', 'cleavage', 'boobs'])
+    const userWantsButtExplicit = hasAny(userLower, ['bunda', 'raba', 'bumbum', 'gluteos', 'ass', 'butt', 'booty', 'bum'])
+    const userWantsOralExplicit = hasAny(userLower, ['boquete', 'chupando', 'oral', 'blowjob', 'sucking', 'licking'])
+    const wantsSelfieMirror =
+      /\b(mostra\s+(você|voce|vc)|me\s+mostra|quero\s+te\s+ver|quero\s+ver\s+(você|voce)|manda\s+(uma\s+)?foto\s+(sua|do\s+seu\s+corpo)|envia\s+(uma\s+)?selfie)\b/i.test(userLower)
+      || hasAny(userLower, ['selfie', 'espelho', 'mirror selfie', 'foto no espelho', 'foto espelho'])
+    const isExplicitRequest =
+      userWantsAnalExplicit || userWantsPussyExplicit || userWantsBreastsExplicit || userWantsButtExplicit || userWantsOralExplicit || wantsDoggystyle
+    if (wantsSelfieMirror && !isExplicitRequest) {
+      applyPoseTemplate('selfie_mirror_outfit_01')
+    }
   }
 
   const fixedMatch = fixedPrompts.find((fp) => {
@@ -500,10 +526,13 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
     : "grainy on-camera flash, bad indoor lighting, messy sheets background, amateur, candid, unfiltered, no beauty filter, realistic skin texture, visible pores, sweat, subtle imperfections, raw photo"
 
   const promptParts = [`${prefix}${subject}`, singleSubject, cleanPrompt].filter((p) => (p || '').toString().trim())
-  const finalPrompt = `${promptParts.join(', ')}. ${style}`.replace(/\s{2,}/g, ' ').trim()
+  const modelKey = String(options?.model || '').toLowerCase().trim()
+  const isFlux = modelKey === 'flux'
+  const fluxPrompt = `${promptParts.join(', ')}, natural colors, neutral white balance, true-to-life color, sharp focus, crisp details, high detail, detailed anatomy`.replace(/\s{2,}/g, ' ').trim()
+  const finalPrompt = (isFlux ? fluxPrompt : `${promptParts.join(', ')}. ${style}`).replace(/\s{2,}/g, ' ').trim()
 
   const defaultNegative =
-    "underwear, panties, bra, bikini, clothes, censored, censor bar, mosaic, grey bar, gray bar, blur, watermark, text, child, underage, male, deformed, " +
+    "underwear, panties, bra, bikini, clothes, censored, censor bar, mosaic, grey bar, gray bar, blur, soft focus, motion blur, gaussian blur, out of focus, low sharpness, sepia, vintage, warm filter, orange tint, brown tint, yellow tint, faded colors, watermark, text, child, underage, male, deformed, " +
     "multiple people, two women, 2girls, group, extra breasts, extra nipples, duplicate body, duplicate torso, extra limbs, " +
     "misplaced nipples, nipples on butt, nipples on ass, nipples on thighs, bad anatomy, mutated, disfigured, malformed, " +
     "twisted neck, broken neck, 180-degree head, head turned backwards, exorcist head, unnatural spine, " +
@@ -512,7 +541,34 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
     "plastic skin, waxy skin, rubber skin, doll-like, porcelain, CGI, 3d render, anime, cartoon, unrealistic, uncanny valley, " +
     "over-smooth skin, airbrushed, beauty filter, over-processed, over-sharpened, glossy skin, fake"
 
-  const negativePrompt = specificNegative ? `${specificNegative}, ${defaultNegative}` : defaultNegative
+  const negativeFilterTerms = [
+    'plastic skin',
+    'waxy skin',
+    'rubber skin',
+    'doll-like',
+    'porcelain',
+    'cgi',
+    '3d render',
+    'anime',
+    'cartoon',
+    'unrealistic',
+    'uncanny valley',
+    'over-smooth skin',
+    'airbrushed',
+    'beauty filter',
+    'over-processed',
+    'over-sharpened',
+    'glossy skin',
+    'fake'
+  ]
+  const defaultNegativeResolved = isFlux
+    ? defaultNegative
+        .split(',')
+        .map((p) => p.trim())
+        .filter((p) => p && !negativeFilterTerms.some((t) => p.toLowerCase().includes(t)))
+        .join(', ')
+    : defaultNegative
+  const negativePrompt = specificNegative ? `${specificNegative}, ${defaultNegativeResolved}` : defaultNegativeResolved
 
   return { prompt: finalPrompt, negative: negativePrompt, poseType }
 }

@@ -78,6 +78,24 @@ function isCloseUpFromPoseType(poseType) {
   return t.startsWith('pussy') || t.startsWith('anal') || t.startsWith('breasts') || t.startsWith('butt')
 }
 
+async function baixarUrlComoBase64(url) {
+  const u = (url || '').toString().trim()
+  if (!u) return null
+  const controller = new AbortController()
+  const to = setTimeout(() => controller.abort(), 20000)
+  try {
+    const res = await fetch(u, { signal: controller.signal })
+    if (!res.ok) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (!buf.length) return null
+    return buf.toString('base64')
+  } catch {
+    return null
+  } finally {
+    clearTimeout(to)
+  }
+}
+
 async function buildCaptionFromImage({ buffer, mimeType, personaName, poseType, closeUp, hint }) {
   const enabledRaw = (process.env.IMAGE_CAPTION_VISION || 'true').toString().trim().toLowerCase()
   const enabled = enabledRaw !== 'false' && enabledRaw !== '0' && enabledRaw !== 'no'
@@ -730,7 +748,8 @@ export async function handleConversaAgente(ctx) {
           // Removido mensagem de espera (buffer) conforme solicitado, pois a geração já demora.
           
           const traits = getPersonaPhysicalTraits(persona.prompt)
-          let { prompt: finalPrompt, negative: negativePrompt, poseType } = resolveImagePrompt(text, photoMatch[1], traits)
+          const model = 'flux'
+          let { prompt: finalPrompt, negative: negativePrompt, poseType } = resolveImagePrompt(text, photoMatch[1], traits, { model })
           let refs = []
           let totalAvailableRefs = 0
           try {
@@ -884,7 +903,7 @@ export async function handleConversaAgente(ctx) {
               let sel = selectRefsByPoseType(poseType)
               refs = sel.refs
               if (sel.isActionPose && !sel.hasPoseRefs) {
-                const fallback = resolveImagePrompt(text, photoMatch[1], traits, { disableActionOverrides: true })
+                const fallback = resolveImagePrompt(text, photoMatch[1], traits, { disableActionOverrides: true, model })
                 finalPrompt = fallback.prompt
                 negativePrompt = fallback.negative
                 poseType = fallback.poseType
@@ -920,7 +939,7 @@ export async function handleConversaAgente(ctx) {
                    // usando apenas uma selfie como referência.
                    poseType = 'selfie_mirror_outfit_01'
                    // Ajusta o prompt para refletir a selfie
-                   const fallback = resolveImagePrompt(text, 'selfie mirror photo in bathroom', traits, { disableActionOverrides: true })
+                   const fallback = resolveImagePrompt(text, 'selfie mirror photo in bathroom', traits, { disableActionOverrides: true, model })
                    finalPrompt = fallback.prompt
                    negativePrompt = fallback.negative
 
@@ -962,7 +981,8 @@ export async function handleConversaAgente(ctx) {
             ? join(process.cwd(), 'public', ctx.mediaContent.replace(/^\//, ''))
             : undefined
           
-          gerarImagemNSFW({ prompt: finalPrompt, negativePrompt, refs, poseType, seed, ...(baseImage ? { baseImage } : {}) }).then(async (img) => {
+          const refImageBase64 = refs.length ? await baixarUrlComoBase64(refs[0]) : undefined
+          gerarImagemNSFW({ prompt: finalPrompt, negativePrompt, refs, poseType, seed, model, ...(refImageBase64 ? { refImageBase64 } : {}), ...(baseImage ? { baseImage } : {}) }).then(async (img) => {
             const bytesLen = img?.bytes ? (Buffer.isBuffer(img.bytes) ? img.bytes.length : (img.bytes?.byteLength || 0)) : 0
             console.log('[ConversaAgente] Resultado geração:', { ok: img?.ok, provider: img?.provider, url: img?.url, bytesLen })
             if (img.ok && (img.url || img.bytes)) {

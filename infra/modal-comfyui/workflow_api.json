@@ -25,7 +25,7 @@
     "inputs": {
       "text": "child, underage, male, text, logo, watermark, signature, censored, censor bar, mosaic, blur, grey bar, gray bar, extra fingers, six fingers, 6 fingers, extra digit, extra digits, extra limbs, multiple hands, duplicate person, duplicate body, duplicate torso, extra breasts, duplicate breasts, extra nipples, misplaced nipples, bad anatomy, deformed, disfigured, malformed, mutated, distorted face, distorted hands, bad hands, deformed hands, fused fingers, missing fingers, long fingers, poorly drawn hands, plastic skin, doll, wax, CGI, 3d render, anime, cartoon, airbrushed, beauty filter, over-smooth skin, glossy skin, fake, low quality, artifacts",
       "clip": [
-        "8",
+        "1",
         1
       ]
     },
@@ -54,7 +54,7 @@
       "scheduler": "karras",
       "denoise": 1,
       "model": [
-        "8",
+        "1",
         0
       ],
       "positive": [
@@ -102,25 +102,6 @@
     "class_type": "SaveImage",
     "_meta": {
       "title": "Save Image"
-    }
-  },
-  "8": {
-    "inputs": {
-      "lora_name": "Nobody_margaux.safetensors",
-      "strength_model": 1,
-      "strength_clip": 1,
-      "model": [
-        "1",
-        0
-      ],
-      "clip": [
-        "1",
-        1
-      ]
-    },
-    "class_type": "LoraLoader",
-    "_meta": {
-      "title": "Load LoRA"
     }
   },
   "9": {

@@ -1,0 +1,156 @@
+{
+  "1": {
+    "inputs": {
+      "model_name": "persephoneFluxNSFWSFW_20FP8.safetensors"
+    },
+    "class_type": "FluxLoader",
+    "_meta": {
+      "title": "Load Flux"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": "positive prompt",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "ClipTextEncodeFlux",
+    "_meta": {
+      "title": "Positive"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "negative prompt",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "ClipTextEncodeFlux",
+    "_meta": {
+      "title": "Negative"
+    }
+  },
+  "4": {
+    "inputs": {
+      "image": "base.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Base Image"
+    }
+  },
+  "5": {
+    "inputs": {
+      "image": "mask.png",
+      "channel": "red"
+    },
+    "class_type": "LoadImageMask",
+    "_meta": {
+      "title": "Load Mask"
+    }
+  },
+  "6": {
+    "inputs": {
+      "image": "ref.png",
+      "model": [
+        "1",
+        0
+      ],
+      "weight": 0.7
+    },
+    "class_type": "IPAdapterFlux",
+    "_meta": {
+      "title": "IPAdapter Flux"
+    }
+  },
+  "7": {
+    "inputs": {
+      "seed": 1337,
+      "steps": 25,
+      "cfg": 3.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "beta",
+      "denoise": 0.8,
+      "model": [
+        "11",
+        0
+      ],
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "image": [
+        "4",
+        0
+      ],
+      "mask": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "FluxInpaintSampler",
+    "_meta": {
+      "title": "Flux Inpaint Sampler"
+    }
+  },
+  "10": {
+    "inputs": {
+      "controlnet_name": "controlnet_flux.safetensors"
+    },
+    "class_type": "ControlNetLoaderFlux",
+    "_meta": {
+      "title": "ControlNet Flux"
+    }
+  },
+  "11": {
+    "inputs": {
+      "strength": 0.9,
+      "image": "pose.png",
+      "model": [
+        "6",
+        0
+      ],
+      "controlnet": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ApplyControlNetFlux",
+    "_meta": {
+      "title": "Apply ControlNet Flux"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeFlux",
+    "_meta": {
+      "title": "Decode"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

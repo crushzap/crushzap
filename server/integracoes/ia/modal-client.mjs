@@ -46,10 +46,13 @@ async function toBase64(input) {
 export async function gerarImagemModal({ 
     prompt, negativePrompt, aspectRatio = '2:3', steps = 32, cfg = 3, seed, 
     refs = [], poseType, denoise, workflow, useRefAsInit, ipadapterWeight, refImageBase64,
-    poseImage, maskImage, baseImage, extraLora, controlStrength
+    poseImage, maskImage, baseImage, extraLora, controlStrength, apiUrlOverride, model, timeoutMsOverride
 }) {
-  const apiUrl = readEnvStr('MODAL_COMFY_API_URL', '')
-  const timeoutMs = readEnvInt('MODAL_COMFY_TIMEOUT_MS', 180000)
+  const apiUrl = apiUrlOverride || readEnvStr('MODAL_COMFY_API_URL', '')
+  const timeoutMs =
+    Number.isFinite(Number(timeoutMsOverride)) && Number(timeoutMsOverride) > 0
+      ? Number(timeoutMsOverride)
+      : readEnvInt('MODAL_COMFY_TIMEOUT_MS', 180000)
   const apiKey = readEnvStr('MODAL_COMFY_API_KEY', '')
   if (!apiUrl) return { ok: false, error: 'MODAL_COMFY_API_URL não configurado' }
 
@@ -123,6 +126,7 @@ export async function gerarImagemModal({
     
     poseType: String(poseType || ''),
     ...(String(workflow || '').trim() ? { workflow: String(workflow || '').trim() } : {}),
+    ...(String(model || '').trim() ? { model: String(model || '').trim() } : {}),
     ...(Number.isFinite(Number(denoise)) ? { denoise: Number(denoise) } : {}),
     ...(typeof useRefAsInit === 'boolean' ? { use_ref_as_init: useRefAsInit } : {}),
     ...(Number.isFinite(Number(ipadapterWeight)) ? { ipadapter_weight: Number(ipadapterWeight) } : {}),
@@ -185,4 +189,10 @@ export async function gerarImagemModal({
   } finally {
     clearTimeout(to)
   }
+}
+
+export async function gerarImagemModalFlux(params = {}) {
+  const apiUrl = readEnvStr('MODAL_COMFY_FLUX_API_URL', '')
+  const fluxTimeoutMs = readEnvInt('MODAL_COMFY_FLUX_TIMEOUT_MS', 240000)
+  return gerarImagemModal({ ...(params || {}), apiUrlOverride: apiUrl, timeoutMsOverride: fluxTimeoutMs })
 }

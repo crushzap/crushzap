@@ -1823,6 +1823,20 @@ class ComfyUIService:
         _save_input_b64("base_image_base64", "base", "30")
         _save_input_b64("mask_base64", "mask", "31")
 
+        try:
+            has_ref_b64 = bool(str(params.get("ref_image_base64") or "").strip())
+            refs_val = params.get("refs")
+            has_refs_urls = isinstance(refs_val, list) and any(str(x or "").strip() for x in refs_val)
+            if requested == "pose" and not has_ref_b64 and not has_refs_urls:
+                ks = workflow.get("5") if isinstance(workflow, dict) else None
+                if isinstance(ks, dict) and ks.get("class_type") == "KSampler":
+                    ks_inputs = ks.setdefault("inputs", {})
+                    if isinstance(ks_inputs, dict):
+                        ks_inputs["model"] = ["1", 0]
+                        print("[Workflow] pose_sem_ref_desativando_ipadapter", {"note": "KSampler.model -> CheckpointLoaderSimple"})
+        except Exception:
+            pass
+
         if requested == "inpainting" and "30" in workflow and "31" in workflow:
             try:
                 base_path = input_dir / f"{client_id}_base.png"

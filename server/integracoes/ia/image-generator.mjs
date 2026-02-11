@@ -2,7 +2,7 @@
 import { gerarImagemReplicate } from './replicate-client.mjs';
 import { gerarImagemFal } from './fal-client.mjs';
 import { gerarImagemComfyUI } from './comfyui-client.mjs';
-import { gerarImagemModal } from './modal-client.mjs';
+import { gerarImagemModal, gerarImagemModalFlux } from './modal-client.mjs';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
@@ -48,6 +48,27 @@ function readEnvNumber(name) {
   if (!raw) return undefined
   const v = Number(raw)
   return Number.isFinite(v) ? v : undefined
+}
+
+function shouldUseFlux() {
+  const flag = (process.env.MODAL_COMFY_USE_FLUX || process.env.IMAGE_MODEL || '').toString().trim().toLowerCase()
+  const apiUrl = (process.env.MODAL_COMFY_FLUX_API_URL || '').toString().trim()
+  const enabled = flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on' || flag === 'flux'
+  return Boolean(apiUrl) && enabled
+}
+
+let fluxBackoffUntilMs = 0
+
+function shouldAttemptFlux() {
+  const now = Date.now()
+  if (now < fluxBackoffUntilMs) return false
+  return shouldUseFlux()
+}
+
+function registerFluxFailure() {
+  const now = Date.now()
+  const backoffMs = readEnvNumber('FLUX_BACKOFF_MS')
+  fluxBackoffUntilMs = now + (Number.isFinite(Number(backoffMs)) && Number(backoffMs) > 0 ? Number(backoffMs) : 10 * 60 * 1000)
 }
 
 function getUrlBasenameLower(u) {
@@ -115,13 +136,14 @@ async function baixarRefComoBase64(url) {
  * @param {string} [params.aspectRatio="2:3"] - Proporção (ex: "2:3")
  * @returns {Promise<{ok: boolean, url?: string, provider?: string, error?: string}>}
  */
-export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePrompt, refs, poseType, seed, baseImage, maskImage }) {
+export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePrompt, refs, poseType, seed, baseImage, maskImage, model, refImageBase64 }) {
   const poseTypeLowerForHands = String(poseType || '').toLowerCase().trim()
   const isExplicitNoHandsPose = poseTypeLowerForHands === 'anal' || poseTypeLowerForHands === 'pussy'
   if (!isExplicitNoHandsPose) {
     ;({ prompt, negativePrompt } = aplicarCorrecaoDeMaosNoPrompt({ prompt, negativePrompt }))
   }
   console.log(`[ImageGenerator] Iniciando geração. Prompt: ${prompt.slice(0, 50)}...`);
+  const seedResolved = Number.isFinite(Number(seed)) ? Number(seed) : Math.floor(Math.random() * 2_147_483_647) + 1
   const recentKey = `${String(poseType || '').toLowerCase().trim()}|${Array.isArray(refs) && refs.length ? String(refs[0] || '') : ''}`
 
   const refsArr = Array.isArray(refs) ? refs : []
@@ -194,6 +216,8 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
        'cordas': 'assets/poses/NSFW_suspended',
 
        // 2. Poses "Fortes" (Definem a posição do corpo todo)
+       'anal': 'assets/poses/NSFW_all_fours_photos',
+       'asshole': 'assets/poses/NSFW_all_fours_photos',
        'doggy': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'],
        'de quatro': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'],
        'de 4': ['assets/poses/NSFW_all_fours_photos', 'assets/poses/NSFW_all_fours'], // Adicionado variação numérica
@@ -258,6 +282,8 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
     return Array.isArray(arr) ? arr : []
   }
 
+  let selectedPoseIsLineart = false
+  let selectedPoseIsSkeleton = false
   for (const [key, pathOrFile] of Object.entries(poseMap)) {
       if (textSearch.includes(key)) {
           try {
@@ -291,11 +317,11 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
                break
              }
 
-             if (existsSync(targetFile)) {
-                 const lower = targetFile.toLowerCase()
-                 const isLineart = lower.includes('lineart')
-                 const isSkeleton = lower.includes('bone') || lower.includes('skeleton')
-                 const canUseAsBaseScene = !baseImage && !isLineart && !isSkeleton
+            if (existsSync(targetFile)) {
+                const lower = targetFile.toLowerCase()
+                const isLineart = lower.includes('lineart')
+                const isSkeleton = lower.includes('bone') || lower.includes('skeleton')
+                const canUseAsBaseScene = !baseImage && !isLineart && !isSkeleton
 
                  if (canUseAsBaseScene) {
                    selectedWorkflow = 'inpainting'
@@ -307,6 +333,8 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
                    selectedPoseImage = targetFile
                    rememberAsset(recentKey, targetFile)
                  }
+                selectedPoseIsLineart = isLineart
+                selectedPoseIsSkeleton = isSkeleton
                  console.log('[ImageGenerator] Pose detectada:', key, 'Asset:', targetFile, 'Workflow:', selectedWorkflow)
                  break
              }
@@ -316,45 +344,106 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
       }
   }
 
-  // 1. Tentar Modal
-  try {
-    let controlStrength =
-      selectedWorkflow === 'pose' && selectedPoseImage
-        ? (readEnvNumber('MODAL_CONTROLNET_STRENGTH') ?? 0.95)
-        : undefined
+  let controlStrength =
+    selectedWorkflow === 'pose' && selectedPoseImage
+      ? (readEnvNumber('MODAL_CONTROLNET_STRENGTH') ?? 0.95)
+      : undefined
 
-    // Reduz a força do ControlNet para poses onde a interação de mãos é complexa (evita "mãos de boneco" ou duplicação)
-    if (typeof controlStrength === 'number' && (poseType === 'anal_hands' || poseType === 'anal_hands_hold')) {
-        controlStrength = 0.80
-        console.log('[ImageGenerator] Reduzindo ControlNet strength para anal_hands:', controlStrength)
-    }
+  if (selectedWorkflow === 'pose' && selectedPoseImage && closeUp && (selectedPoseIsSkeleton || selectedPoseIsLineart)) {
+    console.log('[ImageGenerator] Desativando pose por lineart/skeleton em close-up:', selectedPoseImage)
+    selectedPoseImage = undefined
+    controlStrength = undefined
+  }
 
-    if (selectedWorkflow === 'inpainting' && refsParaModal.length) {
-      const inpaintWeight = readEnvNumber('MODAL_INPAINT_IPADAPTER_WEIGHT')
-      const resolved = Number.isFinite(Number(inpaintWeight)) ? Number(inpaintWeight) : 0.6
-      ipadapterWeight = Math.max(0, Math.min(2, resolved))
-    }
-    let refImageBase64 = refsParaModal.length ? await baixarRefComoBase64(refsParaModal[0]) : null
-    if (!refImageBase64) {
+  if (typeof controlStrength === 'number' && (poseType === 'anal_hands' || poseType === 'anal_hands_hold')) {
+      controlStrength = 0.80
+      console.log('[ImageGenerator] Reduzindo ControlNet strength para anal_hands:', controlStrength)
+  }
+
+  if (selectedWorkflow === 'inpainting' && refsParaModal.length) {
+    const inpaintWeight = readEnvNumber('MODAL_INPAINT_IPADAPTER_WEIGHT')
+    const resolved = Number.isFinite(Number(inpaintWeight)) ? Number(inpaintWeight) : 0.6
+    ipadapterWeight = Math.max(0, Math.min(2, resolved))
+  }
+
+  let refImageBase64Resolved = refImageBase64
+  if (!refImageBase64Resolved && refsParaModal.length) {
+    refImageBase64Resolved = await baixarRefComoBase64(refsParaModal[0])
+  }
+  if (!refImageBase64Resolved) {
+    if (!closeUp) {
       const fallbackRefPath = join(process.cwd(), 'assets', 'poses', 'ref.png')
       if (existsSync(fallbackRefPath)) {
         try {
           const buf = await readFile(fallbackRefPath)
-          if (buf?.length) refImageBase64 = buf.toString('base64')
+          if (buf?.length) refImageBase64Resolved = buf.toString('base64')
         } catch {}
       }
     }
-    const denoiseForModal =
-      selectedWorkflow === 'inpainting'
-        ? (readEnvNumber('MODAL_INPAINT_DENOISE') ?? 0.35)
-        : denoiseParaModal
+  }
+
+  const denoiseForModal =
+    selectedWorkflow === 'inpainting'
+      ? (readEnvNumber('MODAL_INPAINT_DENOISE') ?? 0.35)
+      : denoiseParaModal
+
+  const modelKey = String(model || '').toLowerCase().trim()
+  const fluxRequested = modelKey === 'flux'
+  const fluxEnabled = shouldAttemptFlux() || fluxRequested
+  const fluxSteps = readEnvNumber('FLUX_STEPS')
+  const fluxCfg = readEnvNumber('FLUX_CFG')
+  const fluxStepsResolved = fluxRequested ? (closeUp ? 16 : 18) : fluxSteps
+  const fluxCfgResolved = fluxRequested ? 3.5 : fluxCfg
+  const fluxDenoiseResolved = fluxRequested ? 0.8 : denoiseForModal
+  const fluxWorkflow = fluxRequested ? (selectedWorkflow === 'inpainting' ? 'flux_inpainting' : 'flux') : selectedWorkflow
+
+  if (fluxEnabled) {
+    try {
+      const resultModalFlux = await gerarImagemModalFlux({
+        prompt,
+        negativePrompt,
+        aspectRatio,
+        refs: refsParaModal,
+        poseType,
+        seed: seedResolved,
+        model: fluxRequested ? 'flux' : undefined,
+        workflow: fluxWorkflow,
+        poseImage: selectedPoseImage,
+        ...(baseImage ? { baseImage } : {}),
+        ...(maskImage ? { maskImage } : {}),
+        extraLora,
+        useRefAsInit: closeUp ? false : true,
+        ...(refsParaModal.length ? { ipadapterWeight } : {}),
+        ...(refImageBase64Resolved ? { refImageBase64: refImageBase64Resolved } : {}),
+        ...(typeof controlStrength === 'number' ? { controlStrength } : {}),
+        ...(Number.isFinite(Number(fluxDenoiseResolved)) ? { denoise: Number(fluxDenoiseResolved) } : {}),
+        ...(Number.isFinite(Number(fluxStepsResolved)) ? { steps: Number(fluxStepsResolved) } : {}),
+        ...(Number.isFinite(Number(fluxCfgResolved)) ? { cfg: Number(fluxCfgResolved) } : {}),
+      })
+      if (resultModalFlux.ok) {
+        console.log('[ImageGenerator] Sucesso com Modal Flux')
+        return resultModalFlux
+      }
+      registerFluxFailure()
+      if (fluxRequested) {
+        console.error('[ImageGenerator] Flux error:', resultModalFlux.error)
+      }
+      console.warn('[ImageGenerator] Falha no Modal Flux, tentando Modal SDXL:', resultModalFlux.error)
+    } catch (err) {
+      registerFluxFailure()
+      console.error('[ImageGenerator] Erro crítico no Modal Flux:', err)
+    }
+  }
+
+  // 1. Tentar Modal
+  try {
     const resultModal = await gerarImagemModal({
       prompt,
       negativePrompt,
       aspectRatio,
       refs: refsParaModal,
       poseType,
-      seed,
+      seed: seedResolved,
       workflow: selectedWorkflow,
       poseImage: selectedPoseImage,
       ...(baseImage ? { baseImage } : {}),
@@ -362,7 +451,7 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
       extraLora,
       useRefAsInit: closeUp ? false : true,
       ...(refsParaModal.length ? { ipadapterWeight } : {}),
-      ...(refImageBase64 ? { refImageBase64 } : {}),
+      ...(refImageBase64Resolved ? { refImageBase64: refImageBase64Resolved } : {}),
       ...(typeof controlStrength === 'number' ? { controlStrength } : {}),
       ...(Number.isFinite(Number(denoiseForModal)) ? { denoise: Number(denoiseForModal) } : {}),
     });
