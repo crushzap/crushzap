@@ -391,6 +391,16 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
     }
   }
 
+  const wantsHandsExplicit =
+    wantsHandsWords || wantsHandsActionWords || wantsHandsHoldWords || wantsFingering || wantsPussyOpen || wantsAnalHands || wantsAnalHandsHold
+  if (!wantsHandsExplicit && ['anal', 'butt', 'pussy', 'breasts'].includes(poseType)) {
+    cleanPrompt = [cleanPrompt, 'hands out of frame', 'no hands visible', 'no fingers visible', 'no arms visible']
+      .filter((p) => (p || '').toString().trim())
+      .join(', ')
+    const noHandsNeg = 'hands in frame, fingers visible, arms in frame, palms visible, wrists visible'
+    specificNegative = specificNegative ? `${specificNegative}, ${noHandsNeg}` : noHandsNeg
+  }
+
   if (poseType === 'doggystyle' && wantsWet) {
     cleanPrompt = `${cleanPrompt}, subtle wet sheen, damp inner thighs`
   }

@@ -1348,11 +1348,7 @@ def _apply_workflow_params(workflow: dict, params: dict) -> dict:
     prompt_lower = prompt.lower()
     prompt_explicitly_hides_hands = ("no hands" in prompt_lower) or ("hands out of frame" in prompt_lower) or ("no fingers" in prompt_lower)
     disable_hand_fix = str(params.get("disable_hand_fix") or "").strip().lower() in ("1", "true", "yes", "y", "on")
-    disable_hand_fix_effective = disable_hand_fix or (
-        pose_type_lower.startswith(("anal", "pussy")) 
-        and not pose_type_lower.startswith(("anal_hands")) 
-        and prompt_explicitly_hides_hands
-    )
+    disable_hand_fix_effective = disable_hand_fix or prompt_explicitly_hides_hands
 
     if not disable_hand_fix_effective:
         prompt = _append_prompt_fragment(prompt, HANDS_POSITIVE_PROMPT)
