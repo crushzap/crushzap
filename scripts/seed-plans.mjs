@@ -13,7 +13,7 @@ async function main() {
   const plans = [
     {
       name: 'Semanal',
-      price: 0.10,
+      price: 12.9,
       messagesPerCycle: 100,
     personasAllowed: 1,
     audioEnabled: true,
@@ -22,7 +22,7 @@ async function main() {
   },
   {
     name: 'Mensal',
-    price: 0.19,
+    price: 29.9,
     messagesPerCycle: 500,
     personasAllowed: 3,
     audioEnabled: true,

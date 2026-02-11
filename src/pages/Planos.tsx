@@ -33,6 +33,7 @@ export default function Planos() {
     isActive: p.isActive,
     isPopular: p.isPopular,
     features: p.featuresPaginaPlanos,
+    period: p.name.toLowerCase().includes("semanal") ? "/semana" : "/mês",
   }));
 
   const handleAssinar = (planId: string) => {
@@ -109,7 +110,7 @@ export default function Planos() {
                       ,{plan.price.toFixed(2).split(".")[1]}
                     </span>
                   </div>
-                  <span className="text-sm text-muted-foreground">/mês</span>
+                  <span className="text-sm text-muted-foreground">{plan.period}</span>
                 </div>
 
                 {/* Stats */}

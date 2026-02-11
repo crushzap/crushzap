@@ -192,7 +192,8 @@ export async function handleUpgrade(ctx) {
       } catch {}
     }
     maps.upgradeFlow.set(user.id, { step: 'pix', pixCode: pix.copiaECola, pixQrUrl, planName: plan.name })
-    const intro = `Perfeito, amor. Para assinar o plano ${plan.name}, pague via PIX.\n\nVou te mandar o código em uma mensagem separada. Se precisar, clique em COPIAR PIX para eu reenviar.`
+    const formattedPrice = `R$ ${Number(plan.price).toFixed(2).replace('.', ',')}`
+    const intro = `Perfeito, amor. Para assinar o plano ${plan.name}, pague via PIX.\n\nValor: ${formattedPrice}.\n\nVou te mandar o código em uma mensagem separada. Se precisar, clique em COPIAR PIX para eu reenviar.`
     await salvarSaidaEEnviar({
       prisma,
       store: 'onboarding',

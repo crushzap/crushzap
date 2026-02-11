@@ -153,7 +153,7 @@ image = image.add_local_file(Path(__file__).parent / "flux_inpainting.json", "/r
     image=image,
     volumes={"/cache": vol},
     secrets=_modal_secrets(),
-    scaledown_window=_read_env_int("SCALEDOWN_WINDOW", 900),
+    scaledown_window=_read_env_int("SCALEDOWN_WINDOW", 300),
     timeout=_read_env_int("JOB_TIMEOUT", 1800),
 )
 class ComfyUIService:

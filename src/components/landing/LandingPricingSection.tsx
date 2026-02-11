@@ -36,7 +36,7 @@ export function LandingPricingSection() {
       name: "Plano Mensal",
       price: "29,90",
       period: "/mês",
-      description: "A melhor experiência sem limites",
+      description: "A melhor experiência sem limites com economia de 42%",
       isPopular: true,
       features: [
         "500 mensagens de texto",
@@ -48,7 +48,7 @@ export function LandingPricingSection() {
     },
     {
       name: "Plano Semanal",
-      price: "9,90",
+      price: "12,90",
       period: "/semana",
       description: "Para quem quer curtir o momento",
       isPopular: false,

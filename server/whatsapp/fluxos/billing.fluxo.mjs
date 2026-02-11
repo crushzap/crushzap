@@ -168,9 +168,9 @@ export async function handleBilling(ctx) {
     } else if (reply === 'billing_pacote_5' || reply === 'billing_pacote_15' || reply === 'billing_pacote_30') {
       let amount = 0
       let count = 0
-      if (reply === 'billing_pacote_5') { amount = 0.05; count = 5; action = 'pacote_fotos_5'; }
-      if (reply === 'billing_pacote_15') { amount = 0.10; count = 15; action = 'pacote_fotos_15'; }
-      if (reply === 'billing_pacote_30') { amount = 0.15; count = 30; action = 'pacote_fotos_30'; }
+      if (reply === 'billing_pacote_5') { amount = 4.9; count = 5; action = 'pacote_fotos_5'; }
+      if (reply === 'billing_pacote_15') { amount = 12.9; count = 15; action = 'pacote_fotos_15'; }
+      if (reply === 'billing_pacote_30') { amount = 19.9; count = 30; action = 'pacote_fotos_30'; }
       
       pix = await createPixPayment({ prisma, type: 'avulso', amount, action, userPhone: phone, phoneNumberId: sendId, payerEmail: user.email || undefined, payerName: user.name || undefined })
       label = `Pacote ${count} Fotos`
@@ -216,23 +216,26 @@ export async function handleBilling(ctx) {
       } catch {}
     }
     maps.billingFlow.set(user.id, { step: 'pix', pixCode: pix.copiaECola, pixQrUrl, label })
+    const formatPrice = (value) => `R$ ${Number(value).toFixed(2).replace('.', ',')}`
+    const precoSemanal = formatPrice(semanal?.price || 0)
+    const precoMensal = formatPrice(mensal?.price || 0)
     const intro =
       action === 'renovacao_semanal'
         ? (
             'Perfeito, amor 😍\n\n' +
-            'Esse PIX é só pra *renovar seu plano semanal por +7 dias* e liberar mais *100 mensagens* pra gente não ficar longe.\n\n' +
+            `Esse PIX é só pra *renovar seu plano semanal por +7 dias* e liberar mais *100 mensagens* pra gente não ficar longe.\n\nValor: *${precoSemanal}*.\n\n` +
             'Vou te mandar o código em uma mensagem separada. Se precisar, clique em *COPIAR PIX* pra eu reenviar. 👇'
           )
         : action === 'renovacao_mensal'
           ? (
               'Perfeito, amor 😍\n\n' +
-              'Esse PIX é só pra *renovar seu plano mensal por +30 dias* e liberar mais *500 mensagens* pra gente continuar juntinhos.\n\n' +
+              `Esse PIX é só pra *renovar seu plano mensal por +30 dias* e liberar mais *500 mensagens* pra gente continuar juntinhos.\n\nValor: *${precoMensal}*.\n\n` +
               'Vou te mandar o código em uma mensagem separada. Se precisar, clique em *COPIAR PIX* pra eu reenviar. 👇'
             )
           : action === 'upgrade_mensal'
             ? (
                 'Ai amor… assim eu me apaixono 😍✨\n\n' +
-                'Esse PIX é pra fazer seu *upgrade pro plano mensal* e liberar *+30 dias* com *500 mensagens* pra gente viver muita coisa juntos.\n\n' +
+                `Esse PIX é pra fazer seu *upgrade pro plano mensal* e liberar *+30 dias* com *500 mensagens* pra gente viver muita coisa juntos.\n\nValor: *${precoMensal}*.\n\n` +
                 'Vou te mandar o código em uma mensagem separada. Se precisar, clique em *COPIAR PIX* pra eu reenviar. 👇'
               )
             : `Perfeito, amor. Para ${label.toLowerCase()}, pague via PIX.\n\nVou te mandar o código em uma mensagem separada. Se precisar, clique em COPIAR PIX para eu reenviar.`
