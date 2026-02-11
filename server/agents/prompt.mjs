@@ -1,5 +1,18 @@
 export function composeSystemPrompt(persona) {
   const base = (persona?.prompt || '').toString().trim() || `Você é uma Crush chamada ${(persona?.name || 'Crush').toString()}. Seja carinhosa, envolvente e positiva.`
+  const agora = new Date()
+  const dataHora = (() => {
+    try {
+      return agora.toLocaleString('pt-BR', { timeZoneName: 'short' })
+    } catch {
+      return agora.toISOString()
+    }
+  })()
+  const contextoTempo = `
+CONTEXTO DE TEMPO:
+Data e hora atual: ${dataHora}.
+Use este contexto para coerência de rotina e horários; não diga que está trabalhando fora do horário típico da profissão.
+`.trim()
   
   const instruction = `
 CAPACIDADE VISUAL:
@@ -58,9 +71,9 @@ Todos os personagens e descrições são estritamente 18+ (adultos). Nunca descr
 `.trim()
 
   const pre = (process.env.XAI_PRETRAINING || '').toString().trim()
-  if (!pre) return `${base}\n\n${instruction}`
+  if (!pre) return `${base}\n\n${contextoTempo}\n\n${instruction}`
   const maxLen = 6000
-  const out = `${pre}\n\n${base}\n\n${instruction}`.slice(0, maxLen)
+  const out = `${pre}\n\n${base}\n\n${contextoTempo}\n\n${instruction}`.slice(0, maxLen)
   return out
 }
 
