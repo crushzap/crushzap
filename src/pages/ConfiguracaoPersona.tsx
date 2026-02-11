@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
-import { PersonaWizard } from "@/components/persona/PersonaWizard";
+import { PersonaWizard, type PersonaConfig } from "@/components/persona/PersonaWizard";
 import { WhatsAppFlowPreview } from "@/components/persona/WhatsAppFlowPreview";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +20,7 @@ export default function ConfiguracaoPersona() {
   const [showWizard, setShowWizard] = useState(false);
   const { toast } = useToast();
 
-  const handleWizardComplete = (config: any) => {
+  const handleWizardComplete = (config: PersonaConfig) => {
     console.log("Persona configurada:", config);
     toast({
       title: "Persona configurada! 🎉",

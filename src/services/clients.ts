@@ -2,7 +2,11 @@ const API_BASE = import.meta.env.DEV ? "/api" : (import.meta.env.VITE_API_BASE_U
 
 function handleUnauthorized(res: Response) {
   if (res.status === 401) {
-    try { localStorage.removeItem("cz_admin_token"); } catch {}
+    try {
+      localStorage.removeItem("cz_admin_token");
+    } catch (error) {
+      return;
+    }
     if (typeof window !== "undefined") window.location.href = "/entrar";
     throw new Error("Não autorizado");
   }

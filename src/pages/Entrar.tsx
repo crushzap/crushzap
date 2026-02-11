@@ -24,8 +24,10 @@ export default function Entrar() {
       toast({ title: "Login realizado" });
       navigate("/dashboard", { replace: true });
     },
-    onError: (err: any) => {
-      const msg = typeof err?.message === "string" ? err.message : "Falha no login";
+    onError: (err: unknown) => {
+      const msg = err && typeof err === "object" && "message" in err && typeof (err as { message?: unknown }).message === "string"
+        ? String((err as { message?: unknown }).message)
+        : "Falha no login";
       toast({ title: msg });
     },
   });

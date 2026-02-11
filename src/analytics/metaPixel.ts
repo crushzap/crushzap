@@ -1,7 +1,15 @@
+type FbqFunction = ((...args: unknown[]) => void) & {
+  callMethod?: (...args: unknown[]) => void;
+  queue: unknown[][];
+  push: (...args: unknown[]) => void;
+  loaded: boolean;
+  version: string;
+};
+
 declare global {
   interface Window {
-    fbq?: (...args: any[]) => void;
-    _fbq?: (...args: any[]) => void;
+    fbq?: FbqFunction;
+    _fbq?: FbqFunction;
     __cz_meta_pixel_initialized__?: boolean;
   }
 }
@@ -10,9 +18,13 @@ function ensureFbqStub() {
   if (typeof window === "undefined") return;
   if (window.fbq) return;
 
-  const fbq: any = function (...args: any[]) {
-    fbq.callMethod ? fbq.callMethod.apply(fbq, args) : fbq.queue.push(args);
-  };
+  const fbq = ((...args: unknown[]) => {
+    if (fbq.callMethod) {
+      fbq.callMethod(...args);
+      return;
+    }
+    fbq.queue.push(args);
+  }) as FbqFunction;
   fbq.push = fbq;
   fbq.loaded = true;
   fbq.version = "2.0";
@@ -52,7 +64,7 @@ export function trackMetaPageView() {
   window.fbq?.("track", "PageView");
 }
 
-export function trackMetaEvent(eventName: string, data?: Record<string, any>) {
+export function trackMetaEvent(eventName: string, data?: Record<string, unknown>) {
   if (typeof window === "undefined") return;
   const name = (eventName || "").toString().trim();
   if (!name) return;

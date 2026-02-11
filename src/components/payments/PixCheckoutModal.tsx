@@ -28,13 +28,15 @@ export function PixCheckoutModal({ open, onOpenChange, title = "Checkout PIX", r
       .then(setData)
       .catch(() => setError("Não foi possível iniciar o checkout PIX"))
       .finally(() => setLoading(false));
-  }, [open, request.type, request.planId, request.amount]);
+  }, [open, request]);
 
   const handleCopy = async () => {
     if (!data?.copiaECola) return;
     try {
       await navigator.clipboard.writeText(data.copiaECola);
-    } catch {}
+    } catch (error) {
+      setError("Não foi possível copiar o código PIX");
+    }
   };
 
   return (
@@ -83,4 +85,3 @@ export function PixCheckoutModal({ open, onOpenChange, title = "Checkout PIX", r
     </Dialog>
   );
 }
-

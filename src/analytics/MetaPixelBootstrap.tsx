@@ -7,6 +7,11 @@ export function MetaPixelBootstrap() {
   const location = useLocation();
   const initializedRef = useRef(false);
   const lastPathRef = useRef<string | null>(null);
+  const initialPathRef = useRef<string | null>(null);
+
+  if (initialPathRef.current === null) {
+    initialPathRef.current = `${location.pathname}${location.search}${location.hash}`;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -16,8 +21,12 @@ export function MetaPixelBootstrap() {
         if (cancelled) return;
         if (!cfg.enabled || !cfg.pixelId) return;
         initializedRef.current = initMetaPixel(cfg.pixelId);
-        lastPathRef.current = `${location.pathname}${location.search}${location.hash}`;
-      } catch {}
+        lastPathRef.current = initialPathRef.current;
+      } catch (error) {
+        if (cancelled) return;
+        initializedRef.current = false;
+        lastPathRef.current = null;
+      }
     })();
     return () => {
       cancelled = true;
@@ -34,4 +43,3 @@ export function MetaPixelBootstrap() {
 
   return null;
 }
-

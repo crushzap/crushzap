@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface PersonaConfig {
+export interface PersonaConfig {
   personality: string;
   name: string;
   avatar: string | null;
@@ -253,7 +253,7 @@ export function PersonaWizard({ onComplete, onCancel, initialConfig }: PersonaWi
                           key={mode.id}
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
-                          onClick={() => setConfig({ ...config, responseMode: mode.id as any })}
+                          onClick={() => setConfig({ ...config, responseMode: mode.id as PersonaConfig["responseMode"] })}
                           className={cn(
                             "p-4 rounded-xl border-2 text-center transition-all",
                             isSelected

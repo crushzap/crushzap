@@ -39,14 +39,22 @@ export default function Whatsapp() {
       setEditing(null);
       query.refetch();
     },
-    onError: (err: any) => {
-      toast({ title: typeof err?.message === "string" ? err.message : "Falha ao criar" });
+    onError: (err: unknown) => {
+      const message =
+        err && typeof err === "object" && "message" in err && typeof (err as { message?: unknown }).message === "string"
+          ? String((err as { message?: unknown }).message)
+          : "Falha ao criar";
+      toast({ title: message });
     },
   });
 
   const handleCopy = async (text?: string) => {
     if (!text) return;
-    try { await navigator.clipboard.writeText(text); } catch {}
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      toast({ title: "Não foi possível copiar" });
+    }
   };
 
   return (
@@ -130,7 +138,17 @@ export default function Whatsapp() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={async () => {
               if (!deleting) return;
-              try { await deleteWhatsappConfig(deleting.id); toast({ title: "Configuração excluída" }); query.refetch(); } catch (e: any) { toast({ title: e?.message || "Falha ao excluir" }); }
+              try {
+                await deleteWhatsappConfig(deleting.id);
+                toast({ title: "Configuração excluída" });
+                query.refetch();
+              } catch (e: unknown) {
+                const message =
+                  e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
+                    ? String((e as { message?: unknown }).message)
+                    : "Falha ao excluir";
+                toast({ title: message });
+              }
               setDeleteOpen(false);
               setDeleting(null);
             }}>Excluir</AlertDialogAction>

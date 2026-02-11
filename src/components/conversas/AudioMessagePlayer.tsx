@@ -15,7 +15,10 @@ async function computePeaks(url: string, bars: number) {
   const res = await fetch(url);
   if (!res.ok) return null;
   const buf = await res.arrayBuffer();
-  const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+  const Ctx = (window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as
+    | typeof AudioContext
+    | undefined;
   if (!Ctx) return null;
   const ctx = new Ctx();
   try {
@@ -36,7 +39,7 @@ async function computePeaks(url: string, bars: number) {
     const max = Math.max(...peaks, 0.0001);
     return peaks.map((p) => p / max);
   } finally {
-    try { await ctx.close(); } catch {}
+    await ctx.close().catch(() => undefined);
   }
 }
 
@@ -103,7 +106,11 @@ export function AudioMessagePlayer(props: { url: string; className?: string }) {
     const el = audioRef.current;
     if (!el) return;
     if (el.paused) {
-      try { await el.play(); } catch {}
+      try {
+        await el.play();
+      } catch (error) {
+        setIsPlaying(false);
+      }
     } else {
       el.pause();
     }
@@ -168,4 +175,3 @@ export function AudioMessagePlayer(props: { url: string; className?: string }) {
     </div>
   );
 }
-

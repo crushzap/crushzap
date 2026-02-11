@@ -138,7 +138,7 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
   const denoisePadrao = typeof denoisePadraoRaw === 'number' && denoisePadraoRaw > 0 && denoisePadraoRaw <= 1 ? denoisePadraoRaw : 0.75
   const denoiseCloseUpRaw = readEnvNumber('MODAL_REF_DENOISE_CLOSEUP') ?? readEnvNumber('REF_DENOISE_CLOSEUP')
   // Aumentado para 0.90 para maximizar liberdade criativa e ignorar a estrutura da ref (selfie) em poses anais/vaginais
-  const denoiseCloseUp = typeof denoiseCloseUpRaw === 'number' && denoiseCloseUpRaw > 0 && denoiseCloseUpRaw <= 1 ? denoiseCloseUpRaw : 0.90
+  const denoiseCloseUp = typeof denoiseCloseUpRaw === 'number' && denoiseCloseUpRaw > 0 && denoiseCloseUpRaw <= 1 ? denoiseCloseUpRaw : 0.78
   const denoiseParaModal = refsParaModal.length ? (closeUp ? denoiseCloseUp : denoisePadrao) : undefined
   const ipadapterWeightDefaultRaw = readEnvNumber('MODAL_IPADAPTER_WEIGHT_DEFAULT') ?? readEnvNumber('IPADAPTER_WEIGHT_DEFAULT')
   const ipadapterWeightCloseUpRaw = readEnvNumber('MODAL_IPADAPTER_WEIGHT_CLOSEUP') ?? readEnvNumber('IPADAPTER_WEIGHT_CLOSEUP')
@@ -325,7 +325,7 @@ export async function gerarImagemNSFW({ prompt, aspectRatio = "2:3", negativePro
 
     // Reduz a força do ControlNet para poses onde a interação de mãos é complexa (evita "mãos de boneco" ou duplicação)
     if (typeof controlStrength === 'number' && (poseType === 'anal_hands' || poseType === 'anal_hands_hold')) {
-        controlStrength = 0.70
+        controlStrength = 0.80
         console.log('[ImageGenerator] Reduzindo ControlNet strength para anal_hands:', controlStrength)
     }
 

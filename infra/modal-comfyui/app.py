@@ -690,7 +690,7 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
 
     requested_workflow = str(params.get("workflow") or "").strip().lower()
     prompt_text = _read_workflow_prompt_text(workflow).lower()
-    always = _read_env_str("HANDS_DETAILER_ALWAYS", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+    always = _read_env_str("HANDS_DETAILER_ALWAYS", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     should = always or requested_workflow in ("pose", "pack") or ("hand" in prompt_text) or ("hands" in prompt_text)
     
     if not should:
@@ -1011,9 +1011,9 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         detailer_inputs["max_size"] = 1024.0
     if "steps" in detailer_req:
         try:
-            detailer_inputs["steps"] = int(_read_env_int("HANDS_DETAILER_STEPS", 28))
+            detailer_inputs["steps"] = int(_read_env_int("HANDS_DETAILER_STEPS", 32))
         except Exception:
-            detailer_inputs["steps"] = 28
+            detailer_inputs["steps"] = 32
     if "cfg" in detailer_req:
         try:
             detailer_inputs["cfg"] = float(_read_env_str("HANDS_DETAILER_CFG", "7.0"))
@@ -1025,9 +1025,9 @@ def _inject_hands_detailer(workflow: dict, params: dict, object_info: dict) -> d
         detailer_inputs["scheduler"] = "karras"
     if "denoise" in detailer_req:
         try:
-            detailer_inputs["denoise"] = float(_read_env_str("HANDS_DETAILER_DENOISE", "0.48"))
+            detailer_inputs["denoise"] = float(_read_env_str("HANDS_DETAILER_DENOISE", "0.40"))
         except Exception:
-            detailer_inputs["denoise"] = 0.48
+            detailer_inputs["denoise"] = 0.40
 
     if pipe_key and pipe_key not in detailer_inputs:
         pipe_output_kind = "DETAILER_PIPE"
