@@ -1,6 +1,9 @@
-import { applyTrialConsumption } from '../../assinaturas/controle.mjs'
+import { applyTrialConsumption, checkSubscriptionAllowance, hasActiveSubscription } from '../../assinaturas/controle.mjs'
 import { salvarSaidaEEnviar } from '../../dominio/mensagens/persistencia.mjs'
 import { gerarUrlPublicaQrCodePix } from '../../pagamentos/pix-qrcode.mjs'
+import { composeSystemPrompt } from '../../agents/prompt.mjs'
+import { buildLLMMessages } from '../../dominio/llm/historico.mjs'
+import { generateWithGrok } from '../../integrations/grok.mjs'
 
 export async function handleUpgrade(ctx) {
   const { prisma, reply, typed, flow, sendId, phone, conv, user, persona, sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppImageLink, createPixPayment, maps, personaReady, state } = ctx
@@ -60,6 +63,41 @@ export async function handleUpgrade(ctx) {
       content: txt,
       enviar: () => sendWhatsAppText(sendId, phone, txt),
     })
+    let podeContinuarTexto = false
+    try {
+      const temAssinatura = await hasActiveSubscription(prisma, user.id)
+      if (temAssinatura) {
+        const allowance = await checkSubscriptionAllowance(prisma, user.id)
+        podeContinuarTexto = Boolean(allowance?.allowed)
+      } else {
+        const used = Number(user.trialUsedCount || 0)
+        const limit = Number(user.trialLimit || 10)
+        const blocked = (user.status === 'blocked') || (used >= limit)
+        podeContinuarTexto = !blocked
+      }
+    } catch {}
+    if (podeContinuarTexto) {
+      const basePrompt = composeSystemPrompt(persona)
+      const directive = '\n\nINSTRUÇÃO: O usuário escolheu "AGORA NÃO" para ver planos. Continue a conversa por mensagem com uma resposta imersiva, quente e acolhedora. Proibido usar as palavras "virtual" ou expressões como "beijo virtual"/"algo virtual". Aja sempre como uma namorada real. Responda em 1–3 frases em PT-BR.'
+      const prev = (conv.xaiLastResponseId || '').toString().trim()
+      const convCacheId = (conv.xaiConvCacheId || '').toString().trim()
+      const chat = await buildLLMMessages(prisma, conv.id, basePrompt + directive)
+      chat.push({ role: 'user', content: 'AGORA NÃO' })
+      const gen = await generateWithGrok(chat, { useStore: true, previousResponseId: prev || undefined, convCacheId: convCacheId || undefined })
+      const follow = gen?.ok && gen.content ? gen.content : 'Tá bom, amor 💜 Vamos continuar por mensagem então. Me conta… o que você quer que eu te descreva agora?'
+      if (gen?.responseId) {
+        try { await prisma.conversation.update({ where: { id: conv.id }, data: { xaiLastResponseId: gen.responseId, xaiLastResponseAt: new Date() } }) } catch {}
+      }
+      await salvarSaidaEEnviar({
+        prisma,
+        store: 'message',
+        conversationId: conv.id,
+        userId: user.id,
+        personaId: persona.id,
+        content: follow,
+        enviar: () => sendWhatsAppText(sendId, phone, follow),
+      })
+    }
     return true
   }
 
