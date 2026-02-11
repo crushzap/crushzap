@@ -397,7 +397,7 @@ export function resolveImagePrompt(text, photoTagContent, personaTraits, options
     cleanPrompt = [cleanPrompt, 'hands out of frame', 'no hands visible', 'no fingers visible', 'no arms visible']
       .filter((p) => (p || '').toString().trim())
       .join(', ')
-    const noHandsNeg = 'hands in frame, fingers visible, arms in frame, palms visible, wrists visible'
+    const noHandsNeg = 'hands in frame, fingers visible, arms in frame, palms visible, wrists visible, selfie, mirror selfie, phone, cellphone, holding phone, camera, mobile phone'
     specificNegative = specificNegative ? `${specificNegative}, ${noHandsNeg}` : noHandsNeg
   }
 

@@ -77,7 +77,7 @@ function filtrarRefsCloseUp(refs, poseType) {
             : t === 'oral' || t.startsWith('oral_')
               ? ['oral_', 'face_']
               : []
-  const allow = [...allowBase, 'face_', 'body_']
+  const allow = [...allowBase]
   if (!allow.length) return []
   const out = []
   for (const r of Array.isArray(refs) ? refs : []) {

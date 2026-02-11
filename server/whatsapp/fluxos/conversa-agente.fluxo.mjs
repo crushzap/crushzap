@@ -870,7 +870,8 @@ export async function handleConversaAgente(ctx) {
                 // 1 ou 2 refs fortes são melhores que 6 refs misturadas.
                 const maxRefs = (isPussyFamily || isAnalFamily) ? 2 : 6
                 const outRefs = [...new Set(pick)].slice(0, maxRefs)
-                if (outRefs.length === 0 && names.length > 0) {
+                const isIntimatePose = isPussyFamily || isAnalFamily || typeKey === 'butt'
+                if (outRefs.length === 0 && names.length > 0 && !isIntimatePose) {
                   outRefs.push(...names.slice(0, Math.min(2, names.length)).map(n => n.url))
                 }
                 return {
