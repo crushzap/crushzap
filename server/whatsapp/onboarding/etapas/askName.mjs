@@ -14,7 +14,8 @@ export async function handle(ctx) {
     const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askNameInvalid', direction: 'out', type: 'text', content: body, status: 'queued' } })
     const result = await sendWhatsAppText(sendId, phone, body)
     await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
-    onboarding.set(user.id, { step: 'askName', data: {} })
+    const prevData = onboarding.get(user.id)?.data || {}
+    onboarding.set(user.id, { step: 'askName', data: { ...prevData } })
     return true
   }
 

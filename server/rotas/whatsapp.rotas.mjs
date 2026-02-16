@@ -6,7 +6,7 @@ import { sendWhatsAppAudioSmart, sendWhatsAppButtons, sendWhatsAppImageSmart, se
 import { descreverImagemGemini } from '../integracoes/ia/gemini-vision.mjs'
 import { audioModal } from '../integracoes/ia/audio-modal.mjs'
 import { uploadAudio } from '../integracoes/supabase/storage-audio.mjs'
-import { onboarding, upgradeFlow, billingFlow } from '../whatsapp/estado.mjs'
+import { onboarding, upgradeFlow, billingFlow, onboardingReminders } from '../whatsapp/estado.mjs'
 import { criarContextoWhatsapp } from '../whatsapp/contexto.mjs'
 import { ensureConversation, ensureDefaultPersona, ensureUserByPhone, isPersonaReady } from '../dominio/conversas/servico.mjs'
 import { salvarEntradaWhatsapp } from '../dominio/mensagens/persistencia.mjs'
@@ -25,7 +25,7 @@ import { generateAndStoreSummary } from '../dominio/conversas/resumo.mjs'
 
 export function createWhatsAppRouter({ prisma }) {
   const router = express.Router()
-  const maps = { onboarding, upgradeFlow, billingFlow }
+  const maps = { onboarding, upgradeFlow, billingFlow, onboardingReminders }
   const messageBuffer = new Map()
   const processedInboundIds = new Map()
 
@@ -216,6 +216,9 @@ export function createWhatsAppRouter({ prisma }) {
         || !!ctxBase.state
         || ctxBase.reply === 'vamos_sim'
         || ctxBase.typed === 'vamos sim'
+        || ctxBase.reply === 'lembrar_sim'
+        || ctxBase.reply === 'lembrar_nao'
+        || ctxBase.reply === 'retomar_onboarding'
         || (ctxBase.reply || '').startsWith('upgrade_')
         || (ctxBase.reply || '').startsWith('assinar_')
         || (ctxBase.reply || '').startsWith('billing_')
