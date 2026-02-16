@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 import { buildPersonaPrompt, composeSystemPrompt } from '../server/agents/prompt.mjs'
 import { generateWithGrok } from '../server/integrations/grok.mjs'
 import { sendWhatsAppText } from '../server/integracoes/whatsapp/cliente.mjs'
-import { ensureConversation } from '../server/dominio/conversas/servico.mjs'
+import { ensureConversation, isPersonaReady } from '../server/dominio/conversas/servico.mjs'
 import {
   NOMES_SUGERIDOS,
   PERSONALIDADES_LISTA,
@@ -20,7 +20,7 @@ import {
 
 dotenv.config({ override: true })
 
-const prisma = new PrismaClient()
+let prisma
 
 function pick(list) {
   return Array.isArray(list) && list.length ? list[Math.floor(Math.random() * list.length)] : null
@@ -31,15 +31,48 @@ function pickTitle(list, fallback) {
   return (item?.title || fallback || '').toString()
 }
 
+function parseDbInfo(url) {
+  try {
+    const u = new URL(url)
+    const dbName = (u.pathname || '').replace('/', '')
+    const ssl = u.searchParams.get('sslmode') || ''
+    return { host: u.hostname, port: u.port || '5432', dbName, ssl }
+  } catch {
+    return { host: '', port: '', dbName: '', ssl: '' }
+  }
+}
+
+function resolveDbUrl() {
+  const scriptUrl = (process.env.POSTGRES_URL_SCRIPT || '').toString().trim()
+  const envUrl = (process.env.POSTGRES_URL || '').toString().trim()
+  return scriptUrl || envUrl || ''
+}
+
+function ensureSslMode(dbUrl) {
+  try {
+    const u = new URL(dbUrl)
+    if (u.searchParams.get('sslmode')) return dbUrl
+    u.searchParams.set('sslmode', 'require')
+    return u.toString()
+  } catch {
+    return dbUrl
+  }
+}
+
 async function resolvePhoneNumberId() {
   const envId = (process.env.WHATSAPP_PHONE_NUMBER_ID || '').toString().trim()
   if (envId) return envId
-  const cfg = await prisma.whatsappConfig.findFirst({
-    where: { active: true },
-    orderBy: { createdAt: 'desc' },
-    select: { phoneNumberId: true },
-  })
-  return (cfg?.phoneNumberId || '').toString().trim() || null
+  try {
+    const cfg = await prisma.whatsappConfig.findFirst({
+      where: { active: true },
+      orderBy: { createdAt: 'desc' },
+      select: { phoneNumberId: true },
+    })
+    return (cfg?.phoneNumberId || '').toString().trim() || null
+  } catch (e) {
+    console.warn('Não consegui buscar whatsappConfig no banco, vou seguir sem phoneNumberId do banco.', (e?.message || '').toString())
+    return null
+  }
 }
 
 async function gerarPersonaParaUsuario(user, phoneNumberId) {
@@ -134,17 +167,66 @@ Termine com uma pergunta engajadora para ele.]`
 }
 
 async function main() {
+  const dbUrl = resolveDbUrl()
+  if (!dbUrl) {
+    console.error('POSTGRES_URL não configurado. Defina POSTGRES_URL ou POSTGRES_URL_SCRIPT no .env.')
+    process.exit(1)
+  }
+  const info = parseDbInfo(dbUrl)
+  console.log(`Conectando no banco ${info.host}:${info.port}/${info.dbName}${info.ssl ? ` (sslmode=${info.ssl})` : ''}`)
+  const tryConnect = async (url) => {
+    prisma = new PrismaClient({ datasources: { db: { url } } })
+    await prisma.$connect()
+    return url
+  }
+  let connectedUrl = ''
+  try {
+    connectedUrl = await tryConnect(dbUrl)
+  } catch (e) {
+    const retryUrl = ensureSslMode(dbUrl)
+    if (retryUrl !== dbUrl) {
+      const retryInfo = parseDbInfo(retryUrl)
+      console.log(`Retry com SSL no banco ${retryInfo.host}:${retryInfo.port}/${retryInfo.dbName} (sslmode=require)`)
+      try {
+        connectedUrl = await tryConnect(retryUrl)
+      } catch (e2) {
+        console.error('Falha ao conectar no banco. Verifique POSTGRES_URL e acesso ao servidor.', (e2?.message || e?.message || '').toString())
+        process.exit(1)
+      }
+    } else {
+      console.error('Falha ao conectar no banco. Verifique POSTGRES_URL e acesso ao servidor.', (e?.message || '').toString())
+      process.exit(1)
+    }
+  }
+  if (connectedUrl) {
+    const cInfo = parseDbInfo(connectedUrl)
+    console.log(`Conexão ok ${cInfo.host}:${cInfo.port}/${cInfo.dbName}${cInfo.ssl ? ` (sslmode=${cInfo.ssl})` : ''}`)
+  }
   const phoneNumberId = await resolvePhoneNumberId()
-  const users = await prisma.user.findMany({
+  const allUsers = await prisma.user.findMany({
     where: {
       role: { not: 'superadmin' },
-      personas: { none: {} },
     },
     orderBy: { createdAt: 'asc' },
-    select: { id: true, name: true, email: true, phone: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      personas: {
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        select: { id: true, name: true, personality: true, prompt: true },
+      },
+    },
   })
 
-  console.log(`Usuários sem persona: ${users.length}`)
+  const users = allUsers.filter((u) => {
+    if (!u.personas || u.personas.length === 0) return true
+    const ready = u.personas.some((p) => isPersonaReady(p))
+    return !ready
+  })
+
+  console.log(`Usuários sem persona pronta: ${users.length}`)
 
   for (const user of users) {
     console.log(`Gerando persona para ${user.id} (${user.phone})`)
