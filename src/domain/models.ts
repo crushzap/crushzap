@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export type Role = "user" | "admin" | "superadmin";
+export type Role = "user" | "admin" | "superadmin" | "betatester";
 
 export interface User {
   id: string;

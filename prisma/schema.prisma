@@ -11,6 +11,7 @@ enum Role {
   user
   admin
   superadmin
+  betatester
 }
 
 enum UserStatus {
