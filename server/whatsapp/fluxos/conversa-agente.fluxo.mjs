@@ -500,6 +500,7 @@ function userWantsPhoto(inputText) {
   const t = (inputText || '').toString().toLowerCase()
   if (/\b(send_photo)\b/.test(t)) return true
   if (/\b(foto|imagem)\s+(real|de\s+verdade|verdadeira)\b/.test(t)) return true
+  if (/\b(cadê|cade)\b[\s\S]{0,20}\b(foto|imagem|selfie|nude|nudes|pack|photo|picture|pic|fotinha|fotozinha)s?\b/.test(t)) return true
   if (/\bfoto\s+(sua|tua)\b/.test(t)) return true
   const wants = /\b(manda|envia|me manda|me envia|mostra|me mostra|gera|quero|pode mandar|consegue|cria)\b/.test(t)
   const target = /\b(foto|imagem|selfie|nude|nudes|pack|photo|picture|pic|fotinha|fotozinha)\b/.test(t)
@@ -711,15 +712,17 @@ export async function handleConversaAgente(ctx) {
     }
     console.log('[ConversaAgente] Resposta LLM:', replyTextRaw)
 
+    const wantsPhotoSignal = wantsPhoto || /\[SEND_PHOTO:\s*(.+?)\]/i.test(replyTextRaw)
+
     let photoMatch = replyTextRaw.match(/\[SEND_PHOTO:\s*(.+?)\]/i) || 
                      replyTextRaw.match(/\(Foto:\s*(.+?)\)/i) ||
                      replyTextRaw.match(/\*\(Foto:\s*(.+?)\)\*/i) ||
                      replyTextRaw.match(/\*Foto:\s*(.+?)\*/i)
     let forcedPhoto = false
-    if (!wantsPhoto) {
+    if (!wantsPhotoSignal) {
       photoMatch = null
     }
-    if (!photoMatch && wantsPhoto) {
+    if (!photoMatch && wantsPhotoSignal) {
       forcedPhoto = true
       photoMatch = [`[SEND_PHOTO: ${text}]`, text]
     }
@@ -730,7 +733,7 @@ export async function handleConversaAgente(ctx) {
                              .replace(/\*\(Foto:\s*(.+?)\)\*/gi, '')
                              .replace(/\*Foto:\s*(.+?)\*/gi, '')
                              .trim()
-    if ((forcedPhoto && isRefusalAnswer(captionText)) || (wantsPhoto && isPhotoRefusalAnswer(captionText))) {
+    if ((forcedPhoto && isRefusalAnswer(captionText)) || (wantsPhotoSignal && isPhotoRefusalAnswer(captionText))) {
       captionText = 'Aqui está, amor.'
     }
     let replyText = captionText
