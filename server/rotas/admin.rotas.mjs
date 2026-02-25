@@ -226,17 +226,19 @@ export function createAdminRouter({ prisma }) {
         },
         orderBy: { createdAt: 'desc' },
       })
-      const out = conversations.map((c) => ({
-        lastMessageAt: [c.messages[0]?.createdAt, c.onboardingMessages[0]?.createdAt, c.createdAt]
-          .filter(Boolean)
-          .sort((a, b) => b.getTime() - a.getTime())[0],
-        id: c.id,
-        userPhone: c.user.phone,
-        userName: c.user.name,
-        personaName: c.persona.name,
-        messagesCount: c._count.messages + c._count.onboardingMessages,
-        createdAt: c.createdAt,
-      }))
+      const out = conversations
+        .map((c) => ({
+          lastMessageAt: [c.messages[0]?.createdAt, c.onboardingMessages[0]?.createdAt, c.createdAt]
+            .filter(Boolean)
+            .sort((a, b) => b.getTime() - a.getTime())[0],
+          id: c.id,
+          userPhone: c.user.phone,
+          userName: c.user.name,
+          personaName: c.persona.name,
+          messagesCount: c._count.messages + c._count.onboardingMessages,
+          createdAt: c.createdAt,
+        }))
+        .sort((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime())
       res.json(out)
     } catch (e) {
       res.status(500).json({ error: 'Falha ao listar conversas' })
@@ -292,6 +294,7 @@ export function createAdminRouter({ prisma }) {
           content: m.content,
           status: m.status,
           createdAt: m.createdAt,
+          metadata: m.metadata,
         })),
       )
     } catch {

@@ -32,6 +32,7 @@ export async function handle(ctx) {
   const body = 'Agora eu quero dar uma vida real pra ela.\n\nQual profissão você quer que a sua Crush tenha?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askOccupation', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, PROFISSOES_LISTA, 'Profissão', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     const fallback = [
       { id: 'profissao_modelo', title: 'MODELO' },
@@ -39,7 +40,8 @@ export async function handle(ctx) {
       { id: 'profissao_policial', title: 'POLICIAL' },
     ]
     await sendWhatsAppButtons(sendId, phone, 'Selecione a profissão:', fallback)
+    metadata = { buttons: fallback }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

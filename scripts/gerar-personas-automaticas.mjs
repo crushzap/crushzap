@@ -1,9 +1,10 @@
 import dotenv from 'dotenv'
 import { PrismaClient } from '@prisma/client'
 import { buildPersonaPrompt, composeSystemPrompt } from '../server/agents/prompt.mjs'
-import { generateWithGrok } from '../server/integrations/grok.mjs'
-import { sendWhatsAppText } from '../server/integracoes/whatsapp/cliente.mjs'
+import { generateWithLLM } from '../server/integrations/llm-fallback.mjs'
+import { sendWhatsAppImageLink, sendWhatsAppText } from '../server/integracoes/whatsapp/cliente.mjs'
 import { ensureConversation, isPersonaReady } from '../server/dominio/conversas/servico.mjs'
+import { gerarAvatarFromConsistencyPack } from '../server/dominio/personas/consistency-pack.mjs'
 import {
   NOMES_SUGERIDOS,
   PERSONALIDADES_LISTA,
@@ -28,7 +29,18 @@ function pick(list) {
 
 function pickTitle(list, fallback) {
   const item = pick(list)
+  if (item === null || item === undefined) return (fallback || '').toString()
+  if (typeof item === 'string' || typeof item === 'number') return item.toString()
   return (item?.title || fallback || '').toString()
+}
+
+function normalizePersonaName(name) {
+  return (name || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
 }
 
 function parseDbInfo(url) {
@@ -59,6 +71,11 @@ function ensureSslMode(dbUrl) {
   }
 }
 
+function fotoEnabled() {
+  const v = (process.env.PERSONA_FOTO_ENABLED || '').toString().trim().toLowerCase()
+  return v === '1' || v === 'true' || v === 'sim' || v === 'yes'
+}
+
 async function resolvePhoneNumberId() {
   const envId = (process.env.WHATSAPP_PHONE_NUMBER_ID || '').toString().trim()
   if (envId) return envId
@@ -73,6 +90,25 @@ async function resolvePhoneNumberId() {
     console.warn('Não consegui buscar whatsappConfig no banco, vou seguir sem phoneNumberId do banco.', (e?.message || '').toString())
     return null
   }
+}
+
+async function resolveConversationForPersona(userId, personaId) {
+  const existing = await prisma.conversation.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (existing) {
+    if (existing.personaId !== personaId) {
+      try {
+        await prisma.conversation.update({
+          where: { id: existing.id },
+          data: { personaId, xaiLastResponseId: null, xaiLastResponseAt: null, xaiConvCacheId: null },
+        })
+      } catch {}
+    }
+    return ensureConversation(prisma, userId, personaId)
+  }
+  return ensureConversation(prisma, userId, personaId)
 }
 
 async function gerarPersonaParaUsuario(user, phoneNumberId) {
@@ -122,7 +158,7 @@ async function gerarPersonaParaUsuario(user, phoneNumberId) {
     },
   })
 
-  const conv = await ensureConversation(prisma, user.id, persona.id)
+  const conv = await resolveConversationForPersona(user.id, persona.id)
 
   let greet = `Oi amor, ${userName}. Eu tava te esperando… agora sou toda sua. O que a gente faz primeiro?`
   try {
@@ -138,11 +174,39 @@ Termine com uma pergunta engajadora para ele.]`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: introInstruction },
     ]
-    const gen = await generateWithGrok(chat, { useStore: false, timeoutMs: 25000 })
+    const gen = await generateWithLLM(chat, { useStore: false, timeoutMs: 25000 })
     if (gen?.ok && gen?.content) {
       greet = gen.content.toString().trim()
     }
   } catch {}
+
+  if (fotoEnabled()) {
+    try {
+      const foto = await gerarAvatarFromConsistencyPack({ prisma, personaId: persona.id, type: 'selfie_mirror_outfit_01' })
+      if (foto?.ok && foto.publicUrl) {
+        const imgMsg = await prisma.message.create({
+          data: {
+            conversationId: conv.id,
+            userId: user.id,
+            personaId: persona.id,
+            direction: 'out',
+            type: 'image',
+            content: foto.publicUrl,
+            status: 'queued',
+          },
+        })
+        let imgStatus = 'failed'
+        if (phoneNumberId) {
+          const imgRes = await sendWhatsAppImageLink(phoneNumberId, user.phone, foto.publicUrl)
+          imgStatus = imgRes?.ok ? 'sent' : 'failed'
+          if (!imgRes?.ok) {
+            try { await sendWhatsAppText(phoneNumberId, user.phone, `Aqui está a minha foto: ${foto.publicUrl}`) } catch {}
+          }
+        }
+        await prisma.message.update({ where: { id: imgMsg.id }, data: { status: imgStatus } })
+      }
+    } catch {}
+  }
 
   const firstMsg = await prisma.message.create({
     data: {
@@ -213,6 +277,7 @@ async function main() {
       name: true,
       email: true,
       phone: true,
+      termsAccepted: true,
       personas: {
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         select: { id: true, name: true, personality: true, prompt: true },
@@ -222,6 +287,8 @@ async function main() {
 
   const users = allUsers.filter((u) => {
     if (!u.personas || u.personas.length === 0) return true
+    const hasPadrao = u.personas.some((p) => normalizePersonaName(p?.name).startsWith('padrao'))
+    if (hasPadrao) return true
     const ready = u.personas.some((p) => isPersonaReady(p))
     return !ready
   })

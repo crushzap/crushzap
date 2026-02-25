@@ -22,6 +22,7 @@ export async function handle(ctx) {
   const body = 'E o estilo… como você quer ver ela vestida?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askClothing', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, ROUPAS_LISTA, 'Estilo de roupa', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     const fallback = [
       { id: 'roupa_biquini', title: 'BIQUÍNI' },
@@ -29,7 +30,8 @@ export async function handle(ctx) {
       { id: 'roupa_couro', title: 'COURO' },
     ]
     await sendWhatsAppButtons(sendId, phone, 'Selecione o estilo de roupa:', fallback)
+    metadata = { buttons: fallback }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

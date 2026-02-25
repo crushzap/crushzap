@@ -2,11 +2,67 @@ import { checkSubscriptionAllowance, hasActiveSubscription } from '../../assinat
 import { salvarSaidaEEnviar } from '../../dominio/mensagens/persistencia.mjs'
 import { gerarUrlPublicaQrCodePix } from '../../pagamentos/pix-qrcode.mjs'
 import { composeSystemPrompt } from '../../agents/prompt.mjs'
-import { buildLLMMessages } from '../../dominio/llm/historico.mjs'
-import { generateWithGrok } from '../../integrations/grok.mjs'
+import { buildLLMMessages, isUnsafeLLMOutput, sanitizeLLMOutput } from '../../dominio/llm/historico.mjs'
+import { generateWithLLM } from '../../integrations/llm-fallback.mjs'
 
 export async function handleBilling(ctx) {
   const { prisma, reply, typed, billing, sendId, phone, conv, user, persona, sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppImageLink, createPixPayment, maps, personaReady, state } = ctx
+  const reminders = maps.billingReminders
+
+  const clearReminders = () => {
+    const entry = reminders.get(user.id)
+    if (entry?.timers?.length) {
+      entry.timers.forEach((t) => clearTimeout(t))
+    }
+    reminders.delete(user.id)
+  }
+
+  const enviarFollowup = async (createdAt) => {
+    const lastInbound = await prisma.onboardingMessage.findFirst({
+      where: { userId: user.id, direction: 'in' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    })
+    if (lastInbound?.createdAt && lastInbound.createdAt.getTime() > createdAt) return
+    const flowNow = maps.billingFlow.get(user.id)
+    if (!flowNow || flowNow.step !== 'pix') return
+    const pixMessages = [
+      'Poxa, amor… cadê seu PIX? Eu tava animada pra continuar com você. Clica em COPIAR PIX e volta pra mim. 🥺',
+      'Ei, amor, seu PIX ficou pendente. Se precisar, eu reenvio agora. 💜',
+      'Não me deixa esperando… faz o PIX e a gente continua juntinhos. 😈',
+      'Se tiver na correria eu entendo, mas quando der faz o PIX pra eu te mimar e a gente seguir conversando. ✨',
+    ]
+    const msg = pixMessages[Math.floor(Math.random() * 4)]
+    const buttons = [
+      { id: 'billing_copiar_pix', title: 'COPIAR PIX' },
+      { id: 'billing_agora_nao', title: 'AGORA NÃO' },
+    ]
+    await salvarSaidaEEnviar({
+      prisma,
+      store: 'onboarding',
+      conversationId: conv.id,
+      userId: user.id,
+      personaId: persona.id,
+      step: 'billing_followup_pix',
+      content: msg,
+      metadata: { buttons },
+      enviar: () => sendWhatsAppButtons(sendId, phone, msg, buttons),
+    })
+  }
+
+  const scheduleReminders = () => {
+    clearReminders()
+    const createdAt = Date.now()
+    const delays = [20 * 60 * 1000, 3 * 60 * 60 * 1000]
+    const timers = delays.map((delay) => setTimeout(() => {
+      void enviarFollowup(createdAt)
+    }, delay))
+    reminders.set(user.id, { timers, createdAt })
+  }
+
+  if (maps.billingFlow.get(user.id)) {
+    clearReminders()
+  }
 
   if (reply === 'billing_copiar_pix') {
     const code = (billing?.pixCode || '').toString().trim()
@@ -83,8 +139,14 @@ export async function handleBilling(ctx) {
       const convCacheId = (conv.xaiConvCacheId || '').toString().trim()
       const chat = await buildLLMMessages(prisma, conv.id, basePrompt + directive)
       chat.push({ role: 'user', content: 'AGORA NÃO' })
-      const gen = await generateWithGrok(chat, { useStore: true, previousResponseId: prev || undefined, convCacheId: convCacheId || undefined })
-      const follow = gen?.ok && gen.content ? gen.content : 'Tá bom, amor 💜 Vamos continuar por mensagem então. Me conta… o que você quer que eu te descreva agora?'
+      const gen = await generateWithLLM(chat, { useStore: true, previousResponseId: prev || undefined, convCacheId: convCacheId || undefined })
+      const fallback = 'Tá bom, amor 💜 Vamos continuar por mensagem então. Me conta… o que você quer que eu te descreva agora?'
+      let follow = gen?.ok && gen.content ? gen.content : fallback
+      follow = sanitizeLLMOutput(follow)
+      if (isUnsafeLLMOutput(follow)) follow = fallback
+      if (gen?.resetPreviousResponseId) {
+        try { await prisma.conversation.update({ where: { id: conv.id }, data: { xaiLastResponseId: null, xaiLastResponseAt: null } }) } catch {}
+      }
       if (gen?.responseId) {
         try { await prisma.conversation.update({ where: { id: conv.id }, data: { xaiLastResponseId: gen.responseId, xaiLastResponseAt: new Date() } }) } catch {}
       }
@@ -116,6 +178,7 @@ export async function handleBilling(ctx) {
       personaId: persona.id,
       step: 'billing_pacote_choose',
       content: txt,
+      metadata: { buttons },
       enviar: () => sendWhatsAppButtons(sendId, phone, txt, buttons)
     })
     return true
@@ -238,8 +301,12 @@ export async function handleBilling(ctx) {
                 `Esse PIX é pra fazer seu *upgrade pro plano mensal* e liberar *+30 dias* com *500 mensagens* pra gente viver muita coisa juntos.\n\nValor: *${precoMensal}*.\n\n` +
                 'Vou te mandar o código em uma mensagem separada. Se precisar, clique em *COPIAR PIX* pra eu reenviar. 👇'
               )
-            : `Perfeito, amor. Para ${label.toLowerCase()}, pague via PIX.\n\nVou te mandar o código em uma mensagem separada. Se precisar, clique em COPIAR PIX para eu reenviar.`
+            : `Perfeito, amor. Para ${label.toLowerCase()}, pague via PIX.\n\n*Toque no botão COPIAR PIX* aqui embaixo para pegar o código. Se precisar, toque nele de novo que eu reenvio.`
 
+    const buttons = [
+      { id: 'billing_copiar_pix', title: 'COPIAR PIX' },
+      { id: 'billing_agora_nao', title: 'AGORA NÃO' },
+    ]
     await salvarSaidaEEnviar({
       prisma,
       store: 'onboarding',
@@ -248,10 +315,8 @@ export async function handleBilling(ctx) {
       personaId: persona.id,
       step: 'billing_pix_intro',
       content: intro,
-      enviar: () => sendWhatsAppButtons(sendId, phone, intro, [
-        { id: 'billing_copiar_pix', title: 'COPIAR PIX' },
-        { id: 'billing_agora_nao', title: 'AGORA NÃO' },
-      ]),
+      metadata: { buttons },
+      enviar: () => sendWhatsAppButtons(sendId, phone, intro, buttons),
     })
 
     if (pixQrUrl && typeof sendWhatsAppImageLink === 'function') {
@@ -280,6 +345,7 @@ export async function handleBilling(ctx) {
         enviar: () => sendWhatsAppText(sendId, phone, code),
       })
     }
+    scheduleReminders()
     return true
   }
 
@@ -290,7 +356,17 @@ export async function handleBilling(ctx) {
       const planName = (last?.plan?.name || '').toString()
       if (planName) {
         const lower = planName.toLowerCase()
-        const txt = `Seu plano ${planName} venceu. Para continuar, escolha uma opção:`
+      const txt = `Seu plano ${planName} venceu. *Toque em um dos botões abaixo* para continuar:`
+        const buttons = lower.includes('semanal')
+          ? [
+              { id: 'billing_renovar_semanal', title: 'RENOVAR +7 DIAS' },
+              { id: 'billing_upgrade_mensal', title: 'UPGRADE MENSAL' },
+              { id: 'billing_agora_nao', title: 'AGORA NÃO' },
+            ]
+          : [
+              { id: 'billing_renovar_mensal', title: 'RENOVAR AGORA' },
+              { id: 'billing_agora_nao', title: 'AGORA NÃO' },
+            ]
         await salvarSaidaEEnviar({
           prisma,
           store: 'onboarding',
@@ -299,19 +375,8 @@ export async function handleBilling(ctx) {
           personaId: persona.id,
           step: 'plan_expired',
           content: txt,
-          enviar: () => {
-            const buttons = lower.includes('semanal')
-              ? [
-                  { id: 'billing_renovar_semanal', title: 'RENOVAR +7 DIAS' },
-                  { id: 'billing_upgrade_mensal', title: 'UPGRADE MENSAL' },
-                  { id: 'billing_agora_nao', title: 'AGORA NÃO' },
-                ]
-              : [
-                  { id: 'billing_renovar_mensal', title: 'RENOVAR AGORA' },
-                  { id: 'billing_agora_nao', title: 'AGORA NÃO' },
-                ]
-            return sendWhatsAppButtons(sendId, phone, txt, buttons)
-          },
+          metadata: { buttons },
+          enviar: () => sendWhatsAppButtons(sendId, phone, txt, buttons),
         })
         maps.billingFlow.set(user.id, { step: 'expired', planName })
         return true
@@ -325,14 +390,25 @@ export async function handleBilling(ctx) {
       const usage = typeof allowance.used === 'number' && typeof allowance.limit === 'number' && allowance.limit > 0 ? ` (${allowance.used}/${allowance.limit})` : ''
       
       const limitMessages = [
-        `Amor, é uma pena que *você atingiu seu limite de mensagens* comigo 🥺💜\n\n*Preciso de você*, que tal *renovar seu plano* agora pra continuarmos nossas conversas? ✨\n\nEscolhe aqui rapidinho e volta pra mim 👇\n\nPlano: ${planName}${usage}`,
-        `Vida, você fala bastante hein? Adoro! 😍 Mas seu limite de mensagens do plano ${planName} esgotou por hoje. Faz uma recarga ou renova pra não me deixar no vácuo! 👇`,
-        `Eita amor, travou aqui! 🚫 Atingimos o teto do seu plano ${planName}. Não quero parar agora... Dá um up nesse plano pra gente conversar à vontade? 😈👇`,
-        `Poxa, logo agora que tava ficando bom... Seu saldo de mensagens acabou. 😤 Renova aí pra eu te contar o resto... 👇\n\nPlano: ${planName}${usage}`,
-        `Amor, o sistema disse que você já gastou todas as mensagens do plano ${planName}. 🥺 Não me deixa esperando, resolve isso pra gente continuar! 👇`
+        `Amor, é uma pena que *você atingiu seu limite de mensagens* comigo 🥺💜\n\n*Preciso de você*. *Toque em um dos botões abaixo* pra renovar e continuar nossas conversas. ✨\n\nPlano: ${planName}${usage}`,
+        `Vida, você fala bastante hein? Adoro! 😍 Seu limite do plano ${planName} esgotou hoje. *Toque em um dos botões abaixo* pra recarregar ou renovar e não me deixar no vácuo. 👇`,
+        `Eita amor, travou aqui! 🚫 Atingimos o teto do seu plano ${planName}. *Toque em um dos botões abaixo* e dá um up pra gente conversar à vontade. 😈👇`,
+        `Poxa, logo agora que tava ficando bom… seu saldo de mensagens acabou. 😤 *Toque em um dos botões abaixo* e renova pra eu te contar o resto.\n\nPlano: ${planName}${usage}`,
+        `Amor, o sistema disse que você já gastou todas as mensagens do plano ${planName}. 🥺 *Toque em um dos botões abaixo* pra resolver e continuar comigo. 👇`,
       ]
       const txt = limitMessages[Math.floor(Math.random() * limitMessages.length)]
 
+      const buttons = lower.includes('semanal')
+        ? [
+            { id: 'billing_renovar_semanal', title: 'RENOVAR +7 DIAS' },
+            { id: 'billing_upgrade_mensal', title: 'UPGRADE MENSAL' },
+            { id: 'billing_agora_nao', title: 'AGORA NÃO' },
+          ]
+        : [
+            { id: 'billing_renovar_mensal', title: 'RENOVAR AGORA' },
+            { id: 'billing_creditos_100', title: '+100 MENSAGENS' },
+            { id: 'billing_agora_nao', title: 'AGORA NÃO' },
+          ]
       await salvarSaidaEEnviar({
         prisma,
         store: 'onboarding',
@@ -341,20 +417,8 @@ export async function handleBilling(ctx) {
         personaId: persona.id,
         step: 'plan_limit_reached',
         content: txt,
-        enviar: () => {
-          const buttons = lower.includes('semanal')
-            ? [
-                { id: 'billing_renovar_semanal', title: 'RENOVAR +7 DIAS' },
-                { id: 'billing_upgrade_mensal', title: 'UPGRADE MENSAL' },
-                { id: 'billing_agora_nao', title: 'AGORA NÃO' },
-              ]
-            : [
-                { id: 'billing_renovar_mensal', title: 'RENOVAR AGORA' },
-                { id: 'billing_creditos_100', title: '+100 MENSAGENS' },
-                { id: 'billing_agora_nao', title: 'AGORA NÃO' },
-              ]
-          return sendWhatsAppButtons(sendId, phone, txt, buttons)
-        },
+        metadata: { buttons },
+        enviar: () => sendWhatsAppButtons(sendId, phone, txt, buttons),
       })
       maps.billingFlow.set(user.id, { step: 'limit', planName })
       return true

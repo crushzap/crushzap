@@ -387,11 +387,11 @@ def _build_generation_kwargs(has_sample: bool = False):
     if has_sample:
         temperature = _read_env_float("QWEN3_TEMPERATURE_SAMPLE", 0.9)
         top_p = _read_env_float("QWEN3_TOP_P_SAMPLE", 0.95)
-        speed = _read_env_float("QWEN3_SPEED_SAMPLE", 1.05)
+        speed = _read_env_float("QWEN3_SPEED_SAMPLE", 1.25)
     else:
         temperature = _read_env_float("QWEN3_TEMPERATURE", 1.05)
         top_p = _read_env_float("QWEN3_TOP_P", 0.98)
-        speed = _read_env_float("QWEN3_SPEED", 1.1)
+        speed = _read_env_float("QWEN3_SPEED", 1.3)
     seed = _read_env_int("QWEN3_SEED")
     if temperature is not None:
         kwargs["temperature"] = temperature
@@ -421,7 +421,7 @@ def _build_voice_instruct(voice_prompt: str, has_sample: bool = False) -> str:
     if has_sample:
         sotaque_instruct = "Use sotaque 100% brasileiro (pt-BR). Evite sotaque europeu (pt-PT)."
         prosodia_instruct = (
-            "Siga o áudio de referência: imite o timbre, a entonação e o ritmo. Fale natural e conversacional, com pausas curtas."
+            "Siga o áudio de referência: imite o timbre, a entonação e o ritmo. Fale natural e conversacional, com pausas curtas e ritmo um pouco mais rápido, sem dicção exagerada."
         )
     else:
         sotaque_instruct = (
@@ -432,7 +432,7 @@ def _build_voice_instruct(voice_prompt: str, has_sample: bool = False) -> str:
         )
         prosodia_instruct = (
             "Use prosódia natural e fluida, com ritmo variado como em conversa real: pausas curtas e naturais, entonação expressiva, "
-            "velocidade alternando entre lenta sedutora e mais rápida excitada. Evite pausas longas ou fala robótica, soe humana e envolvente."
+            "velocidade um pouco mais rápida e com variações naturais. Evite pausas longas, dicção exagerada ou fala robótica, soe humana e envolvente."
         )
     merged_prompt = " ".join([p for p in [force_read, sexo_instruct, sotaque_instruct, prosodia_instruct, voice_prompt] if p]).strip()
     return merged_prompt

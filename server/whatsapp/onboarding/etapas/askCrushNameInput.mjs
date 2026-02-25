@@ -10,7 +10,6 @@ export async function handle(ctx) {
   const crush = text.replace(/\s+/g, ' ').trim()
   if (!crush.length) return false
 
-  try { await prisma.persona.update({ where: { id: persona.id }, data: { name: crush } }) } catch {}
   onboarding.set(user.id, { step: 'askPersonality', data: { ...(ctx?.state?.data || {}), crushName: crush } })
   const comment = await comentarioNomeCrushAsync(crush)
   const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentCrushName', direction: 'out', type: 'text', content: comment, status: 'queued' } })
@@ -20,9 +19,11 @@ export async function handle(ctx) {
   const body = 'Agora vamos dar vida a ela.\n\nQue *personalidade* combina mais com a sua Crush?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askPersonality', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, PERSONALIDADES_LISTA, 'Personalidades', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     await sendWhatsAppButtons(sendId, phone, 'Selecione a personalidade:', PERSONALIDADES_FALLBACK_BOTOES)
+    metadata = { buttons: PERSONALIDADES_FALLBACK_BOTOES }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

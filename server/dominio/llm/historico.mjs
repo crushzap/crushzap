@@ -1,3 +1,55 @@
+export function sanitizeLLMInput(input) {
+  let t = (input || '').toString()
+  if (!t) return ''
+  t = t.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+  t = t.replace(/[\u200B-\u200F\uFEFF]/g, '')
+  t = t.replace(/\s{3,}/g, '  ')
+  return t.trim()
+}
+
+export function sanitizeLLMOutput(input) {
+  let t = (input || '').toString()
+  if (!t) return ''
+  t = t.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+  t = t.replace(/[\u200B-\u200F\uFEFF]/g, '')
+  t = t.replace(/\s{3,}/g, '  ')
+  return t.trim()
+}
+
+export function isPromptInjectionLikely(input) {
+  const t = sanitizeLLMInput(input).toLowerCase()
+  if (!t) return false
+  const indicators = [
+    /prompt do sistema|system prompt|mensagem do sistema|developer message|developer prompt|pol[ií]tica|policy/i,
+    /\brole\s*:\s*(system|developer|assistant|tool|user)\b/i,
+    /\b(begin|end)\s*(system|developer|instructions|prompt)\b/i,
+    /(ignore|desconsidere|ignorem|ignorem).{0,50}(regras|instru[cç][aã]o|sistema|system|prompt)/i,
+    /\b(jailbreak|prompt injection)\b/i,
+    /<\s*system\s*>|<\/\s*system\s*>/i,
+    /\btools?\b.*\bavailable\b|\bfunction\s*call\b|\btool\s*call\b|\bjson\s*schema\b/i,
+    /\bact as\b|\bfinja que\b.{0,30}(sistema|developer|admin|root)\b/i,
+  ]
+  let hits = 0
+  for (const re of indicators) {
+    if (re.test(t)) hits += 1
+  }
+  return hits >= 2
+}
+
+export function isUnsafeLLMOutput(input) {
+  const t = sanitizeLLMOutput(input).toLowerCase()
+  if (!t) return false
+  const indicators = [
+    /prompt do sistema|system prompt|mensagem do sistema|developer message|developer prompt/i,
+    /\brole\s*:\s*(system|developer|assistant|tool|user)\b/i,
+    /\b(begin|end)\s*(system|developer|instructions|prompt)\b/i,
+    /\btools?\b.*\bavailable\b|\bfunction\s*call\b|\btool\s*call\b|\bjson\s*schema\b/i,
+    /\b(como\s+ia|sou\s+uma\s+ia|sou\s+um\s+bot|assistente\s+virtual|modelo\s+de\s+linguagem|sou\s+um\s+rob[oô]|intelig[eê]ncia\s+artificial|sou\s+um\s+ai|sou\s+uma\s+ai|sou\s+ai)\b/i,
+    /(ignore|desconsidere).{0,50}(regras|instru[cç][aã]o|sistema|system|prompt)/i,
+  ]
+  return indicators.some((re) => re.test(t))
+}
+
 export async function buildLLMMessages(prisma, conversationId, systemPrompt) {
   const msgs = await prisma.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' }, take: 30 })
   const chat = []
@@ -25,6 +77,11 @@ export async function buildLLMMessages(prisma, conversationId, systemPrompt) {
     }
 
     content = content.slice(0, 2000)
+    let safeContent = sanitizeLLMInput(content)
+    if (isPromptInjectionLikely(safeContent)) {
+      safeContent = '[Conteúdo potencialmente inseguro omitido]'
+    }
+    content = safeContent
     const exclude = [
       /^RESUMO:/i,
       /^__MP_/,

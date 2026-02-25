@@ -10,7 +10,7 @@ import {
   ROUPAS_LISTA,
   SEIOS_LISTA,
 } from './opcoes.mjs'
-import { generateWithGrok } from '../../integrations/grok.mjs'
+import { generateWithLLM } from '../../integrations/llm-fallback.mjs'
 
 function norm(v) {
   return (v || '').toString().trim().toLowerCase()
@@ -102,7 +102,7 @@ export async function comentarioNomeCrushAsync(nome) {
       '- Não faça perguntas',
       '- No máximo 1 emoji',
     ].join('\n')
-    const gen = await generateWithGrok(
+    const gen = await generateWithLLM(
       [
         { role: 'system', content: system },
         { role: 'user', content: user },

@@ -2,7 +2,7 @@ import express from 'express'
 import { sendWhatsAppText } from '../integracoes/whatsapp/cliente.mjs'
 import { extractMetaClientDataFromRequest, sendMetaCapiEvent } from '../integracoes/meta/meta-capi.mjs'
 
-export function createPagamentosRouter({ prisma, createPixPayment, processMercadoPagoWebhook, ensureUserByPhone, ensureDefaultPersona, ensureConversation }) {
+export function createPagamentosRouter({ prisma, createPixPayment, processEconixWebhook, processMercadoPagoWebhook, ensureUserByPhone, ensureDefaultPersona, ensureConversation }) {
   const router = express.Router()
 
   router.post('/api/pagamentos/pix/checkout', async (req, res) => {
@@ -46,7 +46,8 @@ export function createPagamentosRouter({ prisma, createPixPayment, processMercad
 
   router.post('/api/webhook/pagamentos', async (req, res) => {
     try {
-      const result = await processMercadoPagoWebhook({ prisma, ensureUserByPhone, body: req.body })
+      const econix = await processEconixWebhook({ prisma, ensureUserByPhone, body: req.body })
+      const result = econix?.handled ? econix : await processMercadoPagoWebhook({ prisma, ensureUserByPhone, body: req.body })
       if ((result?.event?.type === 'assinatura_aprovada' || result?.event?.type === 'creditos_aprovados' || result?.event?.type === 'pacote_fotos_aprovado') && result?.event?.userPhone) {
         console.log('[Webhook Pagamentos] Processando evento de aprovação:', result.event)
         const paymentId = (result?.paymentId || '').toString().trim()

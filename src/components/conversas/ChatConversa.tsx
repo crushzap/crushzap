@@ -31,7 +31,7 @@ export function ChatConversa(props: {
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
   const mensagensComSeparador = useMemo(() => {
     const out: Array<{ key: string; kind: "dia" | "msg"; value: string | ConversationMessage }> = [];
@@ -47,9 +47,21 @@ export function ChatConversa(props: {
     return out;
   }, [mensagens]);
 
+  const scrollToBottom = () => {
+    const root = scrollAreaRef.current;
+    if (!root) return;
+    const viewport = root.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+    if (!viewport) return;
+    viewport.scrollTop = viewport.scrollHeight;
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
-  }, [mensagens.length, conversa?.id]);
+    if (!conversa) return;
+    requestAnimationFrame(() => {
+      scrollToBottom();
+      requestAnimationFrame(scrollToBottom);
+    });
+  }, [mensagens.length, conversa]);
 
   async function handleEnviar() {
     const trimmed = texto.trim();
@@ -82,7 +94,7 @@ export function ChatConversa(props: {
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea ref={scrollAreaRef} className="flex-1">
         <div className="mx-auto w-full max-w-3xl px-5 py-5">
           {erro && (
             <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -122,10 +134,11 @@ export function ChatConversa(props: {
                   >
                     {m.type === "image" ? (
                       <div className="cursor-pointer" onClick={() => setZoomImage(m.content)}>
-                        <img 
-                          src={m.content} 
-                          alt="Foto enviada" 
-                          className="mb-1 w-48 rounded-lg object-cover transition-opacity hover:opacity-90" 
+                        <img
+                          src={m.content}
+                          alt="Foto enviada"
+                          className="mb-1 w-48 rounded-lg object-cover transition-opacity hover:opacity-90"
+                          onLoad={scrollToBottom}
                         />
                       </div>
                     ) : m.type === "audio" ? (
@@ -145,6 +158,23 @@ export function ChatConversa(props: {
                         )}
                       </div>
                     )}
+                    {Array.isArray(m.metadata?.buttons) && m.metadata.buttons.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {m.metadata.buttons.map((button) => (
+                          <div
+                            key={`${m.id}-${button.id}`}
+                            className={cn(
+                              "rounded-md border px-2 py-1 text-xs",
+                              isOut
+                                ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground"
+                                : "border-border bg-background text-foreground"
+                            )}
+                          >
+                            {button.title}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className={cn("mt-1 text-[11px]", isOut ? "text-primary-foreground/80" : "text-muted-foreground")}>
                       {formatHora(m.createdAt)}
                     </div>
@@ -154,7 +184,6 @@ export function ChatConversa(props: {
             })}
           </div>
 
-          <div ref={bottomRef} />
         </div>
       </ScrollArea>
 

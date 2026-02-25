@@ -44,6 +44,9 @@ export type ConversationMessage = {
   content: string;
   status: "queued" | "sent" | "delivered" | "read" | "failed";
   createdAt: string;
+  metadata?: {
+    buttons?: Array<{ id: string; title: string }>;
+  };
 };
 
 export async function listConversationMessages(conversationId: string, take = 200) {

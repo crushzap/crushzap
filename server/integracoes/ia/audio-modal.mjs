@@ -42,6 +42,14 @@ export const audioModal = {
       }
       return json
     } catch (e) {
+      const isAbort = e?.name === 'AbortError' || (e?.message || '').toString().toLowerCase().includes('aborted')
+      if (isAbort) {
+        const err = new Error('timeout')
+        err.name = 'AbortError'
+        err.code = 'timeout'
+        console.warn('[AudioModal]', { url, ms: Date.now() - t0, error: 'timeout' })
+        throw err
+      }
       console.error('[AudioModal]', { url, ms: Date.now() - t0, error: e?.message || String(e) })
       throw e
     } finally {

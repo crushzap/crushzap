@@ -26,11 +26,12 @@ export async function handle(ctx) {
 
   onboarding.set(user.id, { step: 'confirmName', data: { name: nome } })
   const body = `Só confirmando pra eu não errar: *${nome}* está correto?`
-  const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'confirmName', direction: 'out', type: 'text', content: body, status: 'queued' } })
-  const result = await ctx.sendWhatsAppButtons(sendId, phone, body, [
+  const buttons = [
     { id: 'nome_confirmar', title: 'CONFIRMAR' },
     { id: 'nome_editar', title: 'EDITAR' },
-  ])
+  ]
+  const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'confirmName', direction: 'out', type: 'text', content: body, status: 'queued', metadata: { buttons } } })
+  const result = await ctx.sendWhatsAppButtons(sendId, phone, body, buttons)
   await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
   return true
 }

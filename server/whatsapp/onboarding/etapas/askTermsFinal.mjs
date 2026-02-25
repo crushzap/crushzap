@@ -1,6 +1,7 @@
 import { gerarAvatarFromConsistencyPack, gerarConsistencyPack } from '../../../dominio/personas/consistency-pack.mjs'
-import { generateWithGrok } from '../../../integrations/grok.mjs'
-import { composeSystemPrompt } from '../../../agents/prompt.mjs'
+import { generateWithLLM } from '../../../integrations/llm-fallback.mjs'
+import { buildPersonaPrompt, composeSystemPrompt } from '../../../agents/prompt.mjs'
+import { isUnsafeLLMOutput, sanitizeLLMOutput } from '../../../dominio/llm/historico.mjs'
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
@@ -21,7 +22,32 @@ export async function handle(ctx) {
   const declined = reply === 'termos_nao_final' || typed === 'não concordo' || typed === 'nao concordo'
   if (agreed) {
     try { await prisma.user.update({ where: { id: user.id }, data: { termsAccepted: true, termsAcceptedAt: new Date() } }) } catch {}
+    const d = onboarding.get(user.id)?.data || {}
     onboarding.delete(user.id)
+    let personaFinal = persona
+    try {
+      const uNamePrompt = (d.name || user.name || '').toString()
+      const uEmail = (d.email || user.email || '').toString()
+      const cName = (d.crushName || persona.name || 'Crush').toString()
+      const pers = (d.personality || persona.personality || '').toString()
+      const eth = (d.ethnicity || '').toString()
+      const age = (d.age || '').toString()
+      const hs = (d.hairStyle || '').toString()
+      const hc = (d.hairColor || '').toString()
+      const bt = (d.bodyType || '').toString()
+      const bs = (d.breastSize || '').toString()
+      const bs2 = (d.buttSize || '').toString()
+      const sexualPreference = (d.sexualPreference || '').toString()
+      const job = (d.occupation || '').toString()
+      const outfit = (d.outfit || '').toString()
+      const responseMode = (d.responseMode || persona.responseMode || 'text').toString()
+      const prompt = buildPersonaPrompt({ cName, pers, eth, age, hs, hc, bt, bs, bs2, sexualPreference, job, outfit, uName: uNamePrompt, uEmail })
+      const shouldSetDefaultVoice = (responseMode === 'audio' || responseMode === 'both' || responseMode === 'mirror') && !(persona?.voicePreset || '').toString().trim()
+      const data = shouldSetDefaultVoice
+        ? { name: cName, personality: pers || persona.personality || '', prompt, responseMode, voicePreset: 'padrao' }
+        : { name: cName, personality: pers || persona.personality || '', prompt, responseMode }
+      personaFinal = await prisma.persona.update({ where: { id: persona.id }, data })
+    } catch {}
     const comment = 'Perfeito. Obrigada por confiar em mim… agora eu vou trazer ela à vida do jeitinho que você imaginou.'
     const outComment = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'commentTermsAgreed', direction: 'out', type: 'text', content: comment, status: 'queued' } })
     const commentRes = await sendWhatsAppText(sendId, phone, comment)
@@ -40,7 +66,7 @@ export async function handle(ctx) {
       
       try {
           // Geração dinâmica da primeira mensagem
-          const systemPrompt = composeSystemPrompt(persona)
+          const systemPrompt = composeSystemPrompt(personaFinal)
           const introInstruction = `[INSTRUÇÃO DE SISTEMA: Esta é sua PRIMEIRA mensagem para ${uName} logo após ser criada.
           Aja como uma namorada real e apaixonada que acabou de conhecer o amor da sua vida.
           Use o nome dele (${uName}).
@@ -55,13 +81,16 @@ export async function handle(ctx) {
           ]
 
           // Timeout curto para não demorar demais na primeira msg
-          const genPromise = generateWithGrok(chat, { useStore: false })
+          const genPromise = generateWithLLM(chat, { useStore: false })
           const timeoutPromise = new Promise(r => setTimeout(() => r(null), 8000)) // 8s max
           
           const gen = await Promise.race([genPromise, timeoutPromise])
           
           if (gen && gen.ok && gen.content) {
-              greet = gen.content
+              const candidate = sanitizeLLMOutput(gen.content)
+              if (!isUnsafeLLMOutput(candidate)) {
+                greet = candidate
+              }
           }
       } catch (e) {
           console.error('[Onboarding] Erro ao gerar saudação dinâmica:', e)
@@ -70,17 +99,17 @@ export async function handle(ctx) {
       try {
         if (shouldSendFoto) {
           console.log('[DEBUG] askTermsFinal: requesting selfie_mirror_outfit_01')
-          const foto = await gerarAvatarFromConsistencyPack({ prisma, personaId: persona.id, type: 'selfie_mirror_outfit_01' })
+          const foto = await gerarAvatarFromConsistencyPack({ prisma, personaId: personaFinal.id, type: 'selfie_mirror_outfit_01' })
           if (foto.ok && foto.publicUrl) {
             try {
-              console.log('[Persona Foto] send_whatsapp', { personaId: persona.id, provider: 'modal', source: 'pack_avatar', url: foto.publicUrl })
+              console.log('[Persona Foto] send_whatsapp', { personaId: personaFinal.id, provider: 'modal', source: 'pack_avatar', url: foto.publicUrl })
               const imgRes = await sendWhatsAppImageLink(sendId, phone, foto.publicUrl)
               if (!imgRes?.ok) {
-                console.log('[Persona Foto] send_whatsapp_failed', { personaId: persona.id, error: imgRes?.error || 'Falha ao enviar imagem no WhatsApp' })
+                console.log('[Persona Foto] send_whatsapp_failed', { personaId: personaFinal.id, error: imgRes?.error || 'Falha ao enviar imagem no WhatsApp' })
                 try { await sendWhatsAppText(sendId, phone, `Aqui está a minha foto: ${foto.publicUrl}`) } catch {}
               } else {
                 const waId = imgRes?.data?.messages?.[0]?.id || ''
-                console.log('[Persona Foto] send_whatsapp_ok', { personaId: persona.id, waId })
+                console.log('[Persona Foto] send_whatsapp_ok', { personaId: personaFinal.id, waId })
               }
 
               // Persistir mensagem de imagem no banco para aparecer no frontend
@@ -88,7 +117,7 @@ export async function handle(ctx) {
                 data: {
                   conversationId: conv.id,
                   userId: user.id,
-                  personaId: persona.id,
+                  personaId: personaFinal.id,
                   direction: 'out',
                   type: 'image',
                   content: foto.publicUrl,
@@ -96,11 +125,11 @@ export async function handle(ctx) {
                 }
               })
             } catch (e) {
-              console.log('[Persona Foto] send_whatsapp_failed', { personaId: persona.id, error: (e?.message || 'Falha ao enviar imagem no WhatsApp').toString() })
+              console.log('[Persona Foto] send_whatsapp_failed', { personaId: personaFinal.id, error: (e?.message || 'Falha ao enviar imagem no WhatsApp').toString() })
             }
             try {
               console.log('[Onboarding] Disparando consistency pack em background...')
-              gerarConsistencyPack({ prisma, personaId: persona.id, ensureAvatar: false, avatarUrlOverride: foto.publicUrl })
+              gerarConsistencyPack({ prisma, personaId: personaFinal.id, ensureAvatar: false, avatarUrlOverride: foto.publicUrl })
                 .then(res => console.log('[Onboarding] Consistency pack disparado:', res))
                 .catch(err => console.error('[Onboarding] Erro no consistency pack:', err))
             } catch (e) {
@@ -111,7 +140,7 @@ export async function handle(ctx) {
         } else {
           await sleep(10000)
         }
-        const firstMsg = await prisma.message.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, direction: 'out', type: 'text', content: greet, status: 'queued' } })
+        const firstMsg = await prisma.message.create({ data: { conversationId: conv.id, userId: user.id, personaId: personaFinal.id, direction: 'out', type: 'text', content: greet, status: 'queued' } })
         const sendRes = await sendWhatsAppText(sendId, phone, greet)
         await prisma.message.update({ where: { id: firstMsg.id }, data: { status: sendRes.ok ? 'sent' : 'failed' } })
       } catch {}

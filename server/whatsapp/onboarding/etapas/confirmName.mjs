@@ -1,4 +1,3 @@
-import { buildPersonaPrompt } from '../../../agents/prompt.mjs'
 import { BUNDAS_LISTA, CABELOS_LISTA, CORES_CABELO_LISTA, CORPOS_LISTA, ETNIAS_LISTA, NOMES_SUGERIDOS, ORIENTACOES_SEXUAIS_LISTA, PERSONALIDADES_LISTA, PROFISSOES_LISTA, ROUPAS_LISTA, SEIOS_LISTA } from '../opcoes.mjs'
 
 export async function handle(ctx) {
@@ -31,30 +30,6 @@ export async function handle(ctx) {
       const outfit = pickTitle(ROUPAS_LISTA) || 'Jeans'
       const ages = [19, 21, 23, 25, 27, 29]
       const age = ages[Math.floor(Math.random() * ages.length)]
-      const uEmail = (user.email || '').toString()
-      const ptxt = buildPersonaPrompt({
-        cName: crushName,
-        pers: personality,
-        eth: ethnicity,
-        age,
-        hs: hairStyle,
-        hc: hairColor,
-        bt: bodyType,
-        bs: breastSize,
-        bs2: buttSize,
-        sexualPreference,
-        job: occupation,
-        outfit,
-        uName: nome,
-        uEmail,
-      })
-      try {
-        await prisma.persona.update({
-          where: { id: persona.id },
-          data: { name: crushName, personality, prompt: ptxt, responseMode: 'text' },
-        })
-      } catch {}
-
       onboarding.set(user.id, {
         step: 'askTermsFinal',
         data: {
@@ -90,22 +65,24 @@ export async function handle(ctx) {
       await prisma.onboardingMessage.update({ where: { id: outSummary.id }, data: { status: summaryRes.ok ? 'sent' : 'failed' } })
 
       const bodyTerms = 'Tá tudo pronto. Só falta um último “sim”.\n\nLeia e concorde com nossos Termos de Uso:\nhttps://crushzap.com.br/termos-de-uso\n\nAo tocar em *LI E CONCORDO*, você confirma que leu os termos, *declara que é maior de 18 anos* e assume total responsabilidade pelo acesso ao conteúdo e interações com o CrushZap.'
-      const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askTermsFinal', direction: 'out', type: 'text', content: bodyTerms, status: 'queued' } })
-      const result = await sendWhatsAppButtons(sendId, phone, bodyTerms, [
+      const buttons = [
         { id: 'termos_concordo_final', title: 'LI E CONCORDO' },
         { id: 'termos_nao_final', title: 'NÃO CONCORDO' },
-      ])
+      ]
+      const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askTermsFinal', direction: 'out', type: 'text', content: bodyTerms, status: 'queued', metadata: { buttons } } })
+      const result = await sendWhatsAppButtons(sendId, phone, bodyTerms, buttons)
       await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
       return true
     }
 
     onboarding.set(user.id, { step: 'askCrushNameChoice', data: { name: nome } })
     const body = `Perfeito, ${nome}.\n\nAgora vamos dar um nome pra sua Crush. Você prefere *escolher* o nome ou quer que eu *sugira um aleatório* agora?`
-    const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askCrushNameChoice', direction: 'out', type: 'text', content: body, status: 'queued' } })
-    const result = await ctx.sendWhatsAppButtons(sendId, phone, body, [
+    const buttons = [
       { id: 'nome_digitar', title: 'DIGITAR NOME' },
       { id: 'nome_aleatorio', title: 'NOME ALEATÓRIO' },
-    ])
+    ]
+    const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askCrushNameChoice', direction: 'out', type: 'text', content: body, status: 'queued', metadata: { buttons } } })
+    const result = await ctx.sendWhatsAppButtons(sendId, phone, body, buttons)
     await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
     return true
   }

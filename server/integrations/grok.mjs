@@ -1,7 +1,7 @@
 export async function generateWithGrok(chatMessages, options = {}) {
   const apiKey = process.env.GROK_API_KEY || process.env.XAI_API_KEY
   const model = process.env.GROK_LLM_MODEL || process.env.XAI_MODEL || 'grok-4-1-fast-reasoning'
-  if (!apiKey || !model) return { ok: false, content: null }
+  if (!apiKey || !model) return { ok: false, content: null, provider: 'xai' }
 
   const controller = new AbortController()
   const timeoutMs = options.timeoutMs || 60000
@@ -37,18 +37,20 @@ export async function generateWithGrok(chatMessages, options = {}) {
       const code = (bodyJson?.code || '').toString()
       const err = (bodyJson?.error || bodyJson?.message || '').toString()
       const blob = `${code}\n${err}\n${bodyText}`.toLowerCase()
+      const responseNotFound = resp.status === 404 && blob.includes('response with id') && blob.includes('not found')
       const blocked = resp.status === 403 && (blob.includes('content violates usage guidelines') || blob.includes('failed check:') || blob.includes('safety_check_type_'))
       const errorMessage = err || (bodyText || '').toString().slice(0, 500) || null
-      return { ok: false, content: null, responseId: null, blocked, errorCode: code || null, errorMessage }
+      const errorCode = responseNotFound ? 'response_not_found' : (code || null)
+      return { ok: false, content: null, responseId: null, blocked, errorCode, errorMessage, provider: 'xai' }
     }
     const data = await resp.json()
     const text = extractText(data)
     const out = (text || '').toString().trim().slice(0, 1500)
     const responseId = (data?.id || '').toString().trim() || null
-    return out ? { ok: true, content: out, responseId, blocked: false, errorCode: null } : { ok: false, content: null, responseId, blocked: false, errorCode: null }
+    return out ? { ok: true, content: out, responseId, blocked: false, errorCode: null, provider: 'xai' } : { ok: false, content: null, responseId, blocked: false, errorCode: null, provider: 'xai' }
   } catch (err) {
     console.error('[xAI Responses Error]', { error: (err && err.message) || 'unknown' })
-    return { ok: false, content: null, responseId: null, blocked: false, errorCode: null }
+    return { ok: false, content: null, responseId: null, blocked: false, errorCode: null, provider: 'xai' }
   } finally {
     clearTimeout(to)
   }

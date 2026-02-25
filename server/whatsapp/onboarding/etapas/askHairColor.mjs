@@ -22,6 +22,7 @@ export async function handle(ctx) {
   const body = 'Agora vamos pro corpo dela.\n\nQual tipo de corpo você prefere?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askBodyType', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, CORPOS_LISTA, 'Tipo de corpo', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     const fallback = [
       { id: 'corpo_magra', title: 'MAGRA' },
@@ -29,7 +30,8 @@ export async function handle(ctx) {
       { id: 'corpo_cheinha', title: 'CHEINHA' },
     ]
     await sendWhatsAppButtons(sendId, phone, 'Selecione o tipo de corpo:', fallback)
+    metadata = { buttons: fallback }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

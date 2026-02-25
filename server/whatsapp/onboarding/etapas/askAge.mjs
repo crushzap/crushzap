@@ -9,8 +9,8 @@ export async function handle(ctx) {
 
   const d = onboarding.get(user.id)?.data || {}
   const n = parseInt(text.replace(/\D+/g, ''), 10)
-  if (!Number.isFinite(n) || n < 18) {
-    const body = 'Preciso que seja 18+.\n\nDigite só um número maior ou igual a 18 👇'
+  if (!Number.isFinite(n) || n < 18 || n > 99) {
+    const body = 'Preciso que seja entre 18 e 99.\n\nDigite só um número nessa faixa 👇'
     const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askAgeInvalid', direction: 'out', type: 'text', content: body, status: 'queued' } })
     const result = await sendWhatsAppText(sendId, phone, body)
     await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
@@ -26,6 +26,7 @@ export async function handle(ctx) {
   const body = 'Agora vamos escolher o cabelo dela.\n\nQual *estilo* combina mais com a sua Crush?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askHairStyle', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, CABELOS_LISTA, 'Estilo de cabelo', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     const fallback = [
       { id: 'cabelo_liso', title: 'LISO' },
@@ -33,7 +34,8 @@ export async function handle(ctx) {
       { id: 'cabelo_coque', title: 'COQUE' },
     ]
     await sendWhatsAppButtons(sendId, phone, 'Selecione o estilo de cabelo:', fallback)
+    metadata = { buttons: fallback }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

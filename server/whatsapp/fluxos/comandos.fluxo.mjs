@@ -80,7 +80,7 @@ export async function handleComandos(ctx) {
       const cycleStart = formatarDataHoraPtBr(start)
       const cycleEnd = formatarDataHoraPtBr(end)
       const msgsPerCycle = Number(primaryPlan?.plan?.messagesPerCycle || allowance.sub.plan.messagesPerCycle || 0) || 0
-      const personasAllowed = Number(primaryPlan?.plan?.personasAllowed || allowance.sub.plan.personasAllowed || 0) || 0
+      const personasAllowed = 1
       const audioEnabled = Boolean(primaryPlan?.plan?.audioEnabled || allowance.sub.plan.audioEnabled)
 
       txt =
@@ -120,4 +120,3 @@ export async function handleComandos(ctx) {
 
   return false
 }
-

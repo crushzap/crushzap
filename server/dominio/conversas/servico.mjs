@@ -47,7 +47,13 @@ export async function ensureConversation(prisma, userId, personaId) {
 }
 
 export async function isPersonaReady(persona) {
-  const nameOk = (persona?.name || '').toString().trim().toLowerCase() !== 'padrão'
+  const normalizedName = (persona?.name || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  const nameOk = !normalizedName.startsWith('padrao')
   const prompt = (persona?.prompt || '').toString()
   const promptOk = prompt.length > 50 && /Você é uma Crush chamada|Aparência:|Estilo de roupa:/i.test(prompt)
   const personalityOk = !!(persona?.personality || '').toString().trim()

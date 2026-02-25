@@ -17,6 +17,7 @@ export function MetaPixelBootstrap() {
     let cancelled = false;
     (async () => {
       try {
+        if (import.meta.env.DEV) return;
         const cfg = await getMetaConfig();
         if (cancelled) return;
         if (!cfg.enabled || !cfg.pixelId) return;

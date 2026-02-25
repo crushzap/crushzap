@@ -32,7 +32,7 @@ export const PLANOS_ASSINATURA: PlanoAssinatura[] = [
     isActive: true,
     isPopular: true,
     descriptionMarketing: "Economize 42% em relação ao semanal",
-    featuresMarketing: ["500 mensagens/mês", "3 personas ativas", "Texto e áudio", "15 fotos explícitas", "Economia de 42%"],
-    featuresPaginaPlanos: ["500 mensagens por mês", "3 personas ativas", "Respostas em texto e áudio", "15 fotos explícitas", "Economia de 42%"],
+    featuresMarketing: ["500 mensagens/mês", "1 persona ativa", "Texto e áudio", "15 fotos explícitas", "Economia de 42%"],
+    featuresPaginaPlanos: ["500 mensagens por mês", "1 persona ativa", "Respostas em texto e áudio", "15 fotos explícitas", "Economia de 42%"],
   },
 ];

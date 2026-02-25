@@ -6,7 +6,7 @@ import { sendWhatsAppAudioSmart, sendWhatsAppButtons, sendWhatsAppImageSmart, se
 import { descreverImagemGemini } from '../integracoes/ia/gemini-vision.mjs'
 import { audioModal } from '../integracoes/ia/audio-modal.mjs'
 import { uploadAudio } from '../integracoes/supabase/storage-audio.mjs'
-import { onboarding, upgradeFlow, billingFlow, onboardingReminders } from '../whatsapp/estado.mjs'
+import { onboarding, upgradeFlow, billingFlow, onboardingReminders, upgradeReminders, billingReminders } from '../whatsapp/estado.mjs'
 import { criarContextoWhatsapp } from '../whatsapp/contexto.mjs'
 import { ensureConversation, ensureDefaultPersona, ensureUserByPhone, isPersonaReady } from '../dominio/conversas/servico.mjs'
 import { salvarEntradaWhatsapp } from '../dominio/mensagens/persistencia.mjs'
@@ -25,7 +25,7 @@ import { generateAndStoreSummary } from '../dominio/conversas/resumo.mjs'
 
 export function createWhatsAppRouter({ prisma }) {
   const router = express.Router()
-  const maps = { onboarding, upgradeFlow, billingFlow, onboardingReminders }
+  const maps = { onboarding, upgradeFlow, billingFlow, onboardingReminders, upgradeReminders, billingReminders }
   const messageBuffer = new Map()
   const processedInboundIds = new Map()
 
@@ -157,7 +157,11 @@ export function createWhatsAppRouter({ prisma }) {
                      dbMetadata = { transcription };
                    }
                  } catch (err) {
-                   console.error('[Webhook] Erro no processamento de áudio:', err);
+                   if (err?.code === 'timeout' || err?.name === 'AbortError') {
+                     console.warn('[Webhook] Transcrição de áudio expirada');
+                   } else {
+                     console.error('[Webhook] Erro no processamento de áudio:', err);
+                   }
                    // Fallback: trata como áudio sem transcrição (agente vai receber vazio ou aviso)
                  }
 
@@ -440,14 +444,14 @@ export function createWhatsAppRouter({ prisma }) {
   router.get('/api/whatsapp/webhook/:phoneNumberId', async (req, res) => {
     try {
       const id = req.params.phoneNumberId
-      const expectedRaw = (await prisma.whatsappConfig.findUnique({ where: { phoneNumberId: id } }))?.verifyToken
-        || process.env.WHATSAPP_VERIFY_TOKEN
-        || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN
-      const expected = (expectedRaw || '').toString().trim()
+      const cfgToken = (await prisma.whatsappConfig.findUnique({ where: { phoneNumberId: id } }))?.verifyToken
+      const envToken1 = process.env.WHATSAPP_VERIFY_TOKEN
+      const envToken2 = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN
+      const expectedTokens = [cfgToken, envToken1, envToken2].map((v) => (v || '').toString().trim()).filter(Boolean)
       const token = (req.query['hub.verify_token'] || req.query['verify_token'] || '').toString().trim()
       const challenge = (req.query['hub.challenge'] || '').toString()
       if (!challenge) return res.status(200).send('OK')
-      if (!expected || !token || token !== expected) return res.status(403).send('Token inválido')
+      if (!expectedTokens.length || !token || !expectedTokens.includes(token)) return res.status(403).send('Token inválido')
       if (!challenge) return res.status(400).send('Challenge ausente')
       res.status(200).send(challenge)
     } catch {
@@ -463,12 +467,24 @@ export function createWhatsAppRouter({ prisma }) {
         const statuses = extractWhatsAppStatuses(req.body)
         for (const st of statuses) {
           if (st.status === 'failed') {
-            console.error('[Webhook Status] failed', {
-              id: st.id,
-              recipientId: st.recipientId,
-              phoneNumberId: st.phoneNumberId || req.params.phoneNumberId,
-              errors: st.errors,
-            })
+            const errors = Array.isArray(st.errors) ? st.errors : []
+            const reengagement = errors.find((e) => Number(e?.code) === 131047)
+            if (reengagement) {
+              console.error('[Webhook Status] failed', {
+                id: st.id,
+                recipientId: st.recipientId,
+                phoneNumberId: st.phoneNumberId || req.params.phoneNumberId,
+                errors,
+                reason: 'reengagement_window',
+              })
+            } else {
+              console.error('[Webhook Status] failed', {
+                id: st.id,
+                recipientId: st.recipientId,
+                phoneNumberId: st.phoneNumberId || req.params.phoneNumberId,
+                errors,
+              })
+            }
           } else if (st.id && st.status) {
             console.log('[Webhook Status]', { id: st.id, status: st.status })
           }
@@ -487,7 +503,14 @@ export function createWhatsAppRouter({ prisma }) {
       const challenge = req.query['hub.challenge']?.toString()
       const mode = req.query['hub.mode']?.toString()
       if (!mode || !token || !challenge) return res.status(400).send('')
-      if (!cfg || cfg.verifyToken !== token) return res.status(403).send('')
+      const expectedTokens = [
+        cfg?.verifyToken,
+        process.env.WHATSAPP_VERIFY_TOKEN,
+        process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+      ]
+        .map((v) => (v || '').toString().trim())
+        .filter(Boolean)
+      if (!expectedTokens.length || !expectedTokens.includes(token.toString().trim())) return res.status(403).send('')
       res.status(200).send(challenge)
     } catch {
       res.status(500).send('')
@@ -502,12 +525,24 @@ export function createWhatsAppRouter({ prisma }) {
         const statuses = extractWhatsAppStatuses(req.body)
         for (const st of statuses) {
           if (st.status === 'failed') {
-            console.error('[Webhook Status] failed', {
-              id: st.id,
-              recipientId: st.recipientId,
-              phoneNumberId: st.phoneNumberId,
-              errors: st.errors,
-            })
+            const errors = Array.isArray(st.errors) ? st.errors : []
+            const reengagement = errors.find((e) => Number(e?.code) === 131047)
+            if (reengagement) {
+              console.error('[Webhook Status] failed', {
+                id: st.id,
+                recipientId: st.recipientId,
+                phoneNumberId: st.phoneNumberId,
+                errors,
+                reason: 'reengagement_window',
+              })
+            } else {
+              console.error('[Webhook Status] failed', {
+                id: st.id,
+                recipientId: st.recipientId,
+                phoneNumberId: st.phoneNumberId,
+                errors,
+              })
+            }
           } else if (st.id && st.status) {
             console.log('[Webhook Status]', { id: st.id, status: st.status })
           }

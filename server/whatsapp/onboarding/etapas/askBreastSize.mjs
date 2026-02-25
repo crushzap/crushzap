@@ -22,6 +22,7 @@ export async function handle(ctx) {
   const body = 'E agora… qual tamanho de bunda você prefere?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askButtSize', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, BUNDAS_LISTA, 'Tamanho da bunda', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     const fallback = [
       { id: 'bunda_pequena', title: 'PEQUENA' },
@@ -29,7 +30,8 @@ export async function handle(ctx) {
       { id: 'bunda_muito_grande', title: 'MUITO GRANDE' },
     ]
     await sendWhatsAppButtons(sendId, phone, 'Selecione o tamanho da bunda:', fallback)
+    metadata = { buttons: fallback }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

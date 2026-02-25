@@ -12,7 +12,6 @@ export async function handle(ctx) {
   if (!pers) pers = text
   if (!pers) return false
 
-  try { await prisma.persona.update({ where: { id: persona.id }, data: { personality: pers } }) } catch {}
   const d = onboarding.get(user.id)?.data || {}
   const uName = (d.name || user.name || '').toString()
   onboarding.set(user.id, { step: 'askEthnicity', data: { ...(d || {}), personality: pers } })
@@ -24,6 +23,7 @@ export async function handle(ctx) {
   const body = `Perfeito, ${uName}.\n\nAgora vamos desenhar a aparência dela… qual *etnia* você prefere?`
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askEthnicity', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, ETNIAS_LISTA, 'Etnia', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     const fallback = [
       { id: 'etnia_caucasian', title: 'BRANCA' },
@@ -31,7 +31,8 @@ export async function handle(ctx) {
       { id: 'etnia_latina', title: 'LATINA' },
     ]
     await sendWhatsAppButtons(sendId, phone, 'Selecione a etnia:', fallback)
+    metadata = { buttons: fallback }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

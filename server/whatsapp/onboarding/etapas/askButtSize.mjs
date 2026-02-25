@@ -22,9 +22,11 @@ export async function handle(ctx) {
   const body = 'Agora uma escolha bem importante pra deixar tudo do jeitinho que você imagina.\n\nQual preferência sexual você quer que a sua Crush tenha?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askSexualPreference', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, ORIENTACOES_SEXUAIS_LISTA, 'Preferência sexual', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     await sendWhatsAppButtons(sendId, phone, 'Selecione uma opção:', ORIENTACOES_SEXUAIS_FALLBACK_BOTOES)
+    metadata = { buttons: ORIENTACOES_SEXUAIS_FALLBACK_BOTOES }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }

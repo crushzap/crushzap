@@ -24,7 +24,7 @@ async function main() {
     name: 'Mensal',
     price: 29.9,
     messagesPerCycle: 500,
-    personasAllowed: 3,
+    personasAllowed: 1,
     audioEnabled: true,
     imagesPerCycle: 15,
     active: true,

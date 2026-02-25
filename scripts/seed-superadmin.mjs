@@ -7,9 +7,9 @@ dotenv.config({ override: true })
 const prisma = new PrismaClient()
 
 async function main() {
-  const name = process.env.SUPERADMIN_NAME
-  const email = process.env.SUPERADMIN_EMAIL
-  const password = process.env.SUPERADMIN_PASSWORD
+  const name = (process.env.SUPERADMIN_NAME || '').toString().trim()
+  const email = (process.env.SUPERADMIN_EMAIL || '').toString().trim()
+  const password = (process.env.SUPERADMIN_PASSWORD || '').toString().trim()
 
   if (!name || !email || !password) {
     console.error('SUPERADMIN_NAME, SUPERADMIN_EMAIL e SUPERADMIN_PASSWORD são obrigatórios')

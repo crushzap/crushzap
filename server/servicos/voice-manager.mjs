@@ -14,14 +14,14 @@ const DEFAULT_VOICE_MAP = {
   'padrao': 'padrao'
 };
 
-const QWEN3_VOICE_PROMPT_DEFAULT = (process.env.QWEN3_VOICE_PROMPT_DEFAULT || 'Voz feminina brasileira, pronúncia do Brasil, vogais abertas e entonação brasileira natural. Fala clara, ritmo médio, pausas naturais, tom acolhedor.').toString().trim();
+const QWEN3_VOICE_PROMPT_DEFAULT = (process.env.QWEN3_VOICE_PROMPT_DEFAULT || 'Voz feminina brasileira, pronúncia do Brasil, entonação brasileira natural. Soe conversacional e espontânea, com variação de ritmo e ênfase emocional. Fala clara, pausas naturais e respiração leve, tom acolhedor e íntimo.').toString().trim();
 const QWEN3_VOICE_PROMPT_MAP = {
-  sedutora: 'Voz feminina brasileira, pronúncia do Brasil, sedutora, suave, quente, ritmo médio, pausas naturais, tom íntimo e confiante.',
-  dominante: 'Voz feminina brasileira, pronúncia do Brasil, dominante, firme, segura, ritmo controlado, pausas curtas, tom autoritário e elegante.',
-  brincalhona: 'Voz feminina brasileira, pronúncia do Brasil, brincalhona, leve, sorridente, ritmo ágil, tom divertido.',
-  timida: 'Voz feminina brasileira, pronúncia do Brasil, tímida, suave, delicada, ritmo mais lento, pausas naturais, tom doce e carinhoso.',
-  intelectual: 'Voz feminina brasileira, pronúncia do Brasil, intelectual, clara, bem articulada, ritmo calmo, pausas naturais, tom confiante.',
-  padrao: 'Voz feminina brasileira, pronúncia do Brasil, natural, clara, ritmo médio, pausas naturais, tom acolhedor.'
+  sedutora: 'Voz feminina brasileira, pronúncia do Brasil, sedutora e quente. Soe conversacional e espontânea, com variação de ritmo, pausas naturais e respiração leve. Tom íntimo e confiante.',
+  dominante: 'Voz feminina brasileira, pronúncia do Brasil, dominante e segura. Soe conversacional e espontânea, com ritmo controlado, pausas curtas e ênfase firme. Tom autoritário e elegante.',
+  brincalhona: 'Voz feminina brasileira, pronúncia do Brasil, brincalhona e sorridente. Soe conversacional e espontânea, com ritmo ágil, variação de entonação e pausas naturais. Tom divertido.',
+  timida: 'Voz feminina brasileira, pronúncia do Brasil, tímida e delicada. Soe conversacional e espontânea, com ritmo mais lento, pausas naturais e respiração leve. Tom doce e carinhoso.',
+  intelectual: 'Voz feminina brasileira, pronúncia do Brasil, clara e bem articulada. Soe conversacional e espontânea, com ritmo calmo, pausas naturais e ênfase leve. Tom confiante.',
+  padrao: 'Voz feminina brasileira, pronúncia do Brasil, natural e clara. Soe conversacional e espontânea, com variação de ritmo e pausas naturais. Tom acolhedor.'
 };
 
 function resolveVoiceKey(persona) {

@@ -1,8 +1,8 @@
-import { generateWithGrok } from '../../integrations/grok.mjs'
+import { generateWithLLM } from '../../integrations/llm-fallback.mjs'
 import { composeSystemPrompt } from '../../agents/prompt.mjs'
 import { salvarSaidaEEnviar } from '../../dominio/mensagens/persistencia.mjs'
 import { generateAndStoreSummary } from '../../dominio/conversas/resumo.mjs'
-import { buildLLMMessages } from '../../dominio/llm/historico.mjs'
+import { buildLLMMessages, isPromptInjectionLikely, isUnsafeLLMOutput, sanitizeLLMInput, sanitizeLLMOutput } from '../../dominio/llm/historico.mjs'
 import crypto from 'node:crypto'
 import { gerarImagemNSFW } from '../../integracoes/ia/image-generator.mjs'
 import { checkImageAllowance, consumeImageQuota, hasActiveSubscription } from '../../assinaturas/controle.mjs'
@@ -32,6 +32,7 @@ const AUDIO_MAX_CHUNKS = Math.max(1, parseInt((process.env.AUDIO_MAX_CHUNKS || '
 const AUDIO_MAX_CHARS_PER_CHUNK = Math.max(120, parseInt((process.env.AUDIO_MAX_CHARS_PER_CHUNK || '180').toString(), 10) || 180)
 const TTS_ENGINE_DEFAULT = (process.env.TTS_ENGINE_DEFAULT || 'xtts').toString().trim().toLowerCase()
 const TTS_ENGINE_FALLBACK = (process.env.TTS_ENGINE_FALLBACK || 'xtts').toString().trim().toLowerCase()
+const XAI_PREV_MAX_AGE_MS = Math.max(60000, parseInt((process.env.XAI_PREV_MAX_AGE_MS || '1800000').toString(), 10) || 1800000)
 
 function resolveTtsEngines() {
   const allowed = new Set(['xtts', 'qwen3'])
@@ -249,6 +250,7 @@ function normalizeTextForTTS(input, opts = {}) {
     return ' '
   })
   t = t.replace(/\*[^*]{1,220}\*/g, ' ')
+  t = t.replace(/[*_`"“”‘’]/g, ' ')
   t = t.replace(/\([^)]{0,420}\)/g, ' ')
   t = t.replace(/["“”]/g, '')
   t = t.replace(/\p{Extended_Pictographic}+/gu, ' ')
@@ -353,15 +355,17 @@ function buildMoanText(inputText) {
 function tuneQwen3VoicePromptForCues(basePrompt, cuePrompt) {
   const base = (basePrompt || '').toString()
   const cue = (cuePrompt || '').toString()
-  if (!base) return cue.trim()
+  const baseClean = base.replace(/leitura\s+fiel\s+ao\s+texto\.?/gi, '').trim()
+  const common = 'Evite leitura robótica. Soe conversacional, íntima e espontânea, com ritmo um pouco mais rápido, variação de entonação, ênfase emocional e pausas naturais. Evite dicção exagerada ou leitura palavra por palavra.'
+  if (!baseClean) return `${common} ${cue}`.trim()
   const wantsExpressive = /(asmr|sussurr|ofeg|gemid|gemend|gozand|orgasm|cl[ií]max)/i.test(cue)
-  if (!wantsExpressive) return base
+  if (!wantsExpressive) return `${baseClean} ${common}`.trim()
   let tuned = base
   tuned = tuned.replace(/sem\s+gemidos\s+exagerados\.?/gi, '').trim()
   tuned = tuned.replace(/leitura\s+fiel\s+ao\s+texto\.?/gi, '').trim()
   tuned = tuned.replace(/\s+/g, ' ').trim()
   const add = 'Evite leitura robótica. Soe crua, íntima e espontânea, com variação de volume, respiração audível e pausas naturais.'
-  return `${tuned} ${add}`.trim()
+  return `${tuned} ${add} ${common}`.trim()
 }
 
 function extractAudioCuesFromUserRequest(input) {
@@ -438,6 +442,8 @@ function postProcessTextForAudio(spokenText, userText) {
   if (!original) return original
   let t = original
   t = t.replace(/(^|[.!?…]\s*)[^.!?…]*\b(áudio|audio)\b[^.!?…]*[.!?…]?/gi, ' ')
+  t = t.replace(/(^|[.!?…]\s*)(aqui\s+vai|segue|lá\s+vai|vou\s+mandar|manda(r)?\s+um)\b[^.!?…]*[.!?…]?/gi, ' ')
+  t = t.replace(/(^|[.!?…]\s*)[^.!?…]*\b(voz\s+feminina|voz\s+masculina|voz\s+sensual|narrando|falando)\b[^.!?…]*[.!?…]?/gi, ' ')
   const userAskedQuestion = /\?/.test((userText || '').toString())
   if (!userAskedQuestion) {
     t = t.replace(/[^.!?…]*\?+/g, ' ')
@@ -452,6 +458,16 @@ function isRefusalAnswer(text) {
   if (s === 'não' || s === 'não.' || s.startsWith('não,') || s.startsWith('não.')) return true
   if (s.includes('não posso') || s.includes('não vou') || s.includes('não consigo')) return true
   if (s.includes('vamos brincar de outro jeito')) return true
+  return false
+}
+
+function isPhotoRefusalAnswer(text) {
+  const s = (text || '').toString().trim().toLowerCase()
+  if (!s) return false
+  if (/(não|nao).{0,24}(posso|consigo|rola|d[áa]|tenho).{0,24}(foto|imagem|selfie|real)/.test(s)) return true
+  if (/(sou|eu sou).{0,24}(ai|ia|bot|modelo)/.test(s) && /(foto|imagem|selfie|real)/.test(s)) return true
+  if (/não\s+tenho\s+(corpo|c[âa]mera)/.test(s)) return true
+  if (s.includes('não rola') && /(foto|imagem|selfie|real)/.test(s)) return true
   return false
 }
 
@@ -482,8 +498,11 @@ function normalizeTextForBark(input, opts = {}) {
 
 function userWantsPhoto(inputText) {
   const t = (inputText || '').toString().toLowerCase()
-  const wants = /\b(manda|envia|me manda|mostra|me mostra|gera|quero|pode mandar)\b/.test(t)
-  const target = /\b(foto|imagem|selfie|nude|nudes|bunda|peito|peitos)\b/.test(t)
+  if (/\b(send_photo)\b/.test(t)) return true
+  if (/\b(foto|imagem)\s+(real|de\s+verdade|verdadeira)\b/.test(t)) return true
+  if (/\bfoto\s+(sua|tua)\b/.test(t)) return true
+  const wants = /\b(manda|envia|me manda|me envia|mostra|me mostra|gera|quero|pode mandar|consegue|cria)\b/.test(t)
+  const target = /\b(foto|imagem|selfie|nude|nudes|pack|photo|picture|pic|fotinha|fotozinha)\b/.test(t)
   return wants && target
 }
 
@@ -496,6 +515,8 @@ function isPotentialMinorContent(inputText) {
 function shouldForceAudioByRequest(inputText) {
   const t = (inputText || '').toString().toLowerCase()
   return /(manda|envia|me manda|responde).*(áudio|audio)/.test(t)
+    || /(fala|fale|falar).*(áudio|audio)/.test(t)
+    || /\bno\s+(áudio|audio)\b/.test(t)
     || /(por|em)\s+(áudio|audio)/.test(t)
     || /(voice note|nota de voz)/.test(t)
 }
@@ -587,8 +608,23 @@ export async function handleConversaAgente(ctx) {
     t.includes('quer namorar comigo') ||
     t.includes('quer ser minha crush')
   )
+  const safeUserInput = sanitizeLLMInput(text)
+  if (isPromptInjectionLikely(safeUserInput)) {
+    const replyText = WHATSAPP_FALLBACK_BLOQUEIO_CONTEUDO
+    await salvarSaidaEEnviar({
+      prisma,
+      store: 'message',
+      conversationId: conv.id,
+      userId: user.id,
+      personaId: persona.id,
+      content: replyText,
+      enviar: () => sendWhatsAppText(sendId, phone, replyText),
+    })
+    return true
+  }
 
   if ((personaReady && isGreeting) || (personaReady && !maps.onboarding.get(user.id))) {
+    try { await sendWhatsAppChatState?.('text') } catch {}
     const basePrompt = composeSystemPrompt(persona)
     const audioExpressiveness = `\n\nGUIA (ÁUDIO):\n- Para soar humano, use pausas e variação de ritmo no próprio texto.\n- Use interjeições curtas e naturais (1–3 no máximo), como: "Ah...", "Hmm...", "Ufa...", "Ei...", "Hehe...".\n- Se o usuário pedir voz sussurrada/ofegante/gemendo, reflita isso com pontuação e algumas onomatopeias discretas (ex.: "mmm", "ahh"), sem exagerar.\n- Use reticências e vírgulas para marcar pausas e respiração.\n- Não use marcadores em colchetes no texto falado (eles viram fala literal no TTS).`.trim()
     const systemPrompt = willNeedAudioResponse
@@ -599,6 +635,10 @@ export async function handleConversaAgente(ctx) {
       : `${basePrompt}\n\nIMPORTANTE:\n- Só use [SEND_PHOTO: ...] se o usuário pedir foto explicitamente.`
     const prev = (conv.xaiLastResponseId || '').toString().trim()
     const convCacheId = (conv.xaiConvCacheId || '').toString().trim()
+    const prevAt = conv.xaiLastResponseAt ? new Date(conv.xaiLastResponseAt).getTime() : 0
+    const prevFresh = !!prev && prevAt && (Date.now() - prevAt) < XAI_PREV_MAX_AGE_MS
+    const prevUse = prevFresh ? prev : ''
+    const convCacheUse = prevFresh ? convCacheId : ''
 
     // INJEÇÃO DE REGRA DE IMAGEM: Força o LLM a lembrar da regra de imagem em inglês a cada turno.
     // Isso é invisível para o usuário final no WhatsApp, mas visível para o LLM.
@@ -608,15 +648,17 @@ export async function handleConversaAgente(ctx) {
     const scriptRule = scriptReq
       ? `\n\nIMPORTANTE (CONTEXTO):\n- Você é ${persona.name}. O usuário é o seu Dom.\n- O usuário quer que você fale diretamente com ${scriptReq.target} (terceira pessoa).\n- Escreva a mensagem como se você estivesse falando com ${scriptReq.target} agora.\n- O Dom NÃO é você. Você não diz \"pra mim, seu Dom\".\n- Quando o pedido mencionar \"seu Dom\", entenda que é o usuário (o Dom) e você deve falar \"meu Dom\" ou \"o meu Dom\".\n- Não se dirija ao usuário, não diga \"como pediu\"/\"exato como pediu\" e não finalize pedindo ajuste.`
       : ""
+    const scriptContent = sanitizeLLMInput(scriptReq?.message || safeUserInput || text)
     const userForModel = scriptReq
-      ? `Tarefa: escreva a fala de ${persona.name} para ${scriptReq.target}.\nRegras: não fale com o usuário, não confirme pedido, não use a palavra áudio, não use interrogação.\n${scriptReq.mentionsDom ? 'Contexto: o usuário é o Dom; ao mencionar o Dom, use \"meu Dom\" (nunca \"pra mim, seu Dom\").\n' : ''}${scriptReq.explicitScript ? 'O usuário forneceu um texto pronto. Repita o texto abaixo exatamente, sem resumir, sem parafrasear e sem remover palavras.\nTexto:\n' : 'Use o conteúdo abaixo como base. Não resuma e não corte trechos.\nConteúdo:\n'}${scriptReq.message || text}`.trim()
-      : text
+      ? `Tarefa: escreva a fala de ${persona.name} para ${scriptReq.target}.\nRegras: não fale com o usuário, não confirme pedido, não use a palavra áudio, não use interrogação.\n${scriptReq.mentionsDom ? 'Contexto: o usuário é o Dom; ao mencionar o Dom, use \"meu Dom\" (nunca \"pra mim, seu Dom\").\n' : ''}${scriptReq.explicitScript ? 'O usuário forneceu um texto pronto. Repita o texto abaixo exatamente, sem resumir, sem parafrasear e sem remover palavras.\nTexto:\n' : 'Use o conteúdo abaixo como base. Não resuma e não corte trechos.\nConteúdo:\n'}${scriptContent}`.trim()
+      : (safeUserInput || text)
     
-    const chat = prev
+    const fullChat = [...(await buildLLMMessages(prisma, conv.id, systemPrompt + scriptRule)), { role: 'user', content: userForModel + imageRule }]
+    const chat = prevUse
       ? [{ role: 'user', content: userForModel + imageRule }]
-      : [...(await buildLLMMessages(prisma, conv.id, systemPrompt + scriptRule)), { role: 'user', content: userForModel + imageRule }]
+      : fullChat
     
-    const gen = await generateWithGrok(chat, { useStore: true, previousResponseId: prev || undefined, convCacheId: convCacheId || undefined })
+    const gen = await generateWithLLM(chat, { useStore: true, previousResponseId: prevUse || undefined, convCacheId: convCacheUse || undefined, fallbackChatMessages: fullChat })
     if (gen?.blocked) {
       const detail = (gen?.errorMessage || '').toString()
       const isCsam = detail.toLowerCase().includes('safety_check_type_csam')
@@ -640,8 +682,14 @@ export async function handleConversaAgente(ctx) {
       })
       return true
     }
+    if (gen?.resetPreviousResponseId) {
+      try { await prisma.conversation.update({ where: { id: conv.id }, data: { xaiLastResponseId: null, xaiLastResponseAt: null } }) } catch {}
+    }
     if (gen?.responseId) {
       try { await prisma.conversation.update({ where: { id: conv.id }, data: { xaiLastResponseId: gen.responseId, xaiLastResponseAt: new Date() } }) } catch {}
+    }
+    if (gen) {
+      console.log('[ConversaAgente] LLM usado:', { provider: gen?.provider || 'desconhecido', responseId: gen?.responseId || null })
     }
     
     let replyTextRaw = gen.ok && gen.content ? gen.content : WHATSAPP_FALLBACK_ERRO_GERACAO
@@ -651,20 +699,39 @@ export async function handleConversaAgente(ctx) {
     if (willNeedAudioResponse && scriptReq && scriptReq.message && isRefusalAnswer(replyTextRaw)) {
       replyTextRaw = buildScriptFallbackText(scriptReq) || replyTextRaw
     }
+    replyTextRaw = sanitizeLLMOutput(replyTextRaw)
+    if (isUnsafeLLMOutput(replyTextRaw)) {
+      replyTextRaw = WHATSAPP_FALLBACK_BLOQUEIO_CONTEUDO
+      try {
+        await prisma.conversation.update({
+          where: { id: conv.id },
+          data: { xaiLastResponseId: null, xaiLastResponseAt: null, xaiConvCacheId: crypto.randomUUID() }
+        })
+      } catch {}
+    }
     console.log('[ConversaAgente] Resposta LLM:', replyTextRaw)
 
-    const photoMatch = replyTextRaw.match(/\[SEND_PHOTO:\s*(.+?)\]/i) || 
-                       replyTextRaw.match(/\(Foto:\s*(.+?)\)/i) ||
-                       replyTextRaw.match(/\*\(Foto:\s*(.+?)\)\*/i) ||
-                       replyTextRaw.match(/\*Foto:\s*(.+?)\*/i)
+    let photoMatch = replyTextRaw.match(/\[SEND_PHOTO:\s*(.+?)\]/i) || 
+                     replyTextRaw.match(/\(Foto:\s*(.+?)\)/i) ||
+                     replyTextRaw.match(/\*\(Foto:\s*(.+?)\)\*/i) ||
+                     replyTextRaw.match(/\*Foto:\s*(.+?)\*/i)
+    let forcedPhoto = false
+    if (!wantsPhoto) {
+      photoMatch = null
+    }
+    if (!photoMatch && wantsPhoto) {
+      forcedPhoto = true
+      photoMatch = [`[SEND_PHOTO: ${text}]`, text]
+    }
 
     let captionText = replyTextRaw
-    if (photoMatch) {
-      captionText = captionText.replace(/\[SEND_PHOTO:\s*(.+?)\]/gi, '')
-                               .replace(/\(Foto:\s*(.+?)\)/gi, '')
-                               .replace(/\*\(Foto:\s*(.+?)\)\*/gi, '')
-                               .replace(/\*Foto:\s*(.+?)\*/gi, '')
-                               .trim()
+    captionText = captionText.replace(/\[SEND_PHOTO:\s*(.+?)\]/gi, '')
+                             .replace(/\(Foto:\s*(.+?)\)/gi, '')
+                             .replace(/\*\(Foto:\s*(.+?)\)\*/gi, '')
+                             .replace(/\*Foto:\s*(.+?)\*/gi, '')
+                             .trim()
+    if ((forcedPhoto && isRefusalAnswer(captionText)) || (wantsPhoto && isPhotoRefusalAnswer(captionText))) {
+      captionText = 'Aqui está, amor.'
     }
     let replyText = captionText
     let qwen3CuePrompt = ''
@@ -738,6 +805,7 @@ export async function handleConversaAgente(ctx) {
           userId: user.id,
           personaId: persona.id,
           content: upsellText,
+          metadata: { buttons },
           enviar: () => sendWhatsAppButtons(sendId, phone, upsellText, buttons)
         })
         return true
@@ -1230,6 +1298,10 @@ export async function handleConversaAgente(ctx) {
           }
 
           const t = getRandom(upsellText)
+          const buttons = [
+            { id: 'upgrade_conhecer_planos', title: 'VER PLANOS' },
+            { id: 'upgrade_agora_nao', title: 'AGORA NÃO' },
+          ]
           await salvarSaidaEEnviar({
             prisma,
             store: 'message',
@@ -1237,10 +1309,8 @@ export async function handleConversaAgente(ctx) {
             userId: user.id,
             personaId: persona.id,
             content: t,
-            enviar: () => sendWhatsAppButtons(sendId, phone, t, [
-              { id: 'upgrade_conhecer_planos', title: 'VER PLANOS' },
-              { id: 'upgrade_agora_nao', title: 'AGORA NÃO' },
-            ]),
+            metadata: { buttons },
+            enviar: () => sendWhatsAppButtons(sendId, phone, t, buttons),
           })
           return true
         }

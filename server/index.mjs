@@ -2,7 +2,9 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { PrismaClient } from '@prisma/client'
-import { createPixPayment, processMercadoPagoWebhook } from './pagamentos/mercadoPago.mjs'
+import bcrypt from 'bcryptjs'
+import crypto from 'node:crypto'
+import { createPixPayment, processEconixWebhook, processMercadoPagoWebhook } from './pagamentos/mercadoPago.mjs'
 import { startSubscriptionExpiryJob } from './assinaturas/controle.mjs'
 import { createAdminRouter } from './rotas/admin.rotas.mjs'
 import { createPagamentosRouter } from './rotas/pagamentos.rotas.mjs'
@@ -21,6 +23,44 @@ const __dirname = path.dirname(__filename)
 dotenv.config({ override: process.env.NODE_ENV !== 'production' })
 const app = express()
 const prisma = new PrismaClient()
+
+function deriveSuperadminPhone(email) {
+  try {
+    const hex = crypto.createHash('sha256').update(String(email).trim().toLowerCase()).digest('hex')
+    const n = BigInt('0x' + hex.slice(0, 16)) % 10000000000n
+    return `0${n.toString().padStart(10, '0')}`
+  } catch {
+    return '00000000000'
+  }
+}
+
+async function ensureSuperadmin() {
+  try {
+    const name = (process.env.SUPERADMIN_NAME || '').toString().trim()
+    const email = (process.env.SUPERADMIN_EMAIL || '').toString().trim()
+    const password = (process.env.SUPERADMIN_PASSWORD || '').toString().trim()
+    if (!email || !password) return
+    const phone = (process.env.SUPERADMIN_PHONE || '').toString().trim() || deriveSuperadminPhone(email)
+    const passwordHash = bcrypt.hashSync(password, 10)
+    await prisma.user.upsert({
+      where: { email },
+      update: { name: name || null, role: 'superadmin', status: 'active', passwordHash },
+      create: {
+        name: name || null,
+        email,
+        phone,
+        role: 'superadmin',
+        status: 'active',
+        trialLimit: Number(process.env.TRIAL_LIMIT_PER_ACCOUNT ?? 10),
+        passwordHash,
+      },
+    })
+  } catch (e) {
+    console.error('[Superadmin] falha ao garantir credenciais', e?.message || String(e))
+  }
+}
+
+await ensureSuperadmin()
 
 const ensureUserByPhone = (phone) => ensureUserByPhoneBase(prisma, phone)
 const ensureDefaultPersona = (userId) => ensureDefaultPersonaBase(prisma, userId)
@@ -79,7 +119,7 @@ app.use(createCoreRouter())
 app.use(createMetaRouter())
 app.use(createAuthRouter({ prisma }))
 app.use(createAdminRouter({ prisma }))
-app.use(createPagamentosRouter({ prisma, createPixPayment, processMercadoPagoWebhook, ensureUserByPhone, ensureDefaultPersona, ensureConversation }))
+app.use(createPagamentosRouter({ prisma, createPixPayment, processEconixWebhook, processMercadoPagoWebhook, ensureUserByPhone, ensureDefaultPersona, ensureConversation }))
 app.use(createWhatsAppRouter({ prisma }))
 app.use(createConversasRouter({ prisma }))
 

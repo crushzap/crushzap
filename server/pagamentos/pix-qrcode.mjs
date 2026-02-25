@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import * as QRCode from 'qrcode'
 import { uploadImagemPublicaSupabase } from '../integracoes/supabase/cliente.mjs'
 
 function normalizarBase64(b64) {
@@ -44,4 +45,17 @@ export async function gerarUrlPublicaQrCodePix({ checkoutId, qrCodeBase64, env =
   if (!up.ok) return up
 
   return { ok: true, bucket: up.bucket, path: up.path, publicUrl: up.publicUrl }
+}
+
+export async function gerarBase64QrCodePix({ copiaECola }) {
+  const payload = (copiaECola || '').toString().trim()
+  if (!payload) return null
+  try {
+    const dataUrl = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 1, width: 512 })
+    const idx = dataUrl.indexOf('base64,')
+    if (idx >= 0) return dataUrl.slice(idx + 'base64,'.length).trim()
+    return dataUrl
+  } catch {
+    return null
+  }
 }

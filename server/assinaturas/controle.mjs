@@ -5,6 +5,25 @@ async function isBetaTester(prisma, userId) {
   return user?.role === 'betatester'
 }
 
+async function isSuperAdmin(prisma, userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
+  return user?.role === 'superadmin'
+}
+
+function buildUnlimitedPlan() {
+  return {
+    id: 'superadmin-ilimitado',
+    name: 'Acesso ilimitado',
+    price: 0,
+    currency: 'BRL',
+    messagesPerCycle: Number.MAX_SAFE_INTEGER,
+    imagesPerCycle: Number.MAX_SAFE_INTEGER,
+    personasAllowed: 1,
+    audioEnabled: true,
+    active: true,
+  }
+}
+
 async function resolveBetaTesterPlan(prisma) {
   const plan = await prisma.plan.findFirst({
     where: { active: true, name: { contains: 'mensal', mode: 'insensitive' } },
@@ -18,7 +37,7 @@ async function resolveBetaTesterPlan(prisma) {
     currency: 'BRL',
     messagesPerCycle: 500,
     imagesPerCycle: 15,
-    personasAllowed: 3,
+    personasAllowed: 1,
     audioEnabled: true,
     active: true,
   }
@@ -31,7 +50,7 @@ function buildBetaTesterPlan(basePlan) {
     name,
     messagesPerCycle: Number(basePlan?.messagesPerCycle || 0) * BETATESTER_MULTIPLIER,
     imagesPerCycle: Number(basePlan?.imagesPerCycle || 0) * BETATESTER_MULTIPLIER,
-    personasAllowed: Number(basePlan?.personasAllowed || 0) * BETATESTER_MULTIPLIER,
+    personasAllowed: 1,
     audioEnabled: true,
   }
 }
@@ -43,6 +62,7 @@ function getBetaTesterPeriod(now) {
 }
 
 export async function hasActiveSubscription(prisma, userId) {
+  if (await isSuperAdmin(prisma, userId)) return true
   if (await isBetaTester(prisma, userId)) return true
   const now = new Date()
   const sub = await prisma.subscription.findFirst({ where: { userId, status: 'active', currentPeriodEnd: { gt: now } } })
@@ -61,6 +81,18 @@ export async function getActiveSubscription(prisma, userId) {
 export async function checkSubscriptionAllowance(prisma, userId) {
   const now = new Date()
   const audioMultiplier = Math.max(1, parseInt((process.env.AUDIO_COST_MULTIPLIER || '10').toString(), 10) || 10)
+  if (await isSuperAdmin(prisma, userId)) {
+    const plan = buildUnlimitedPlan()
+    const period = getBetaTesterPeriod(now)
+    return {
+      allowed: true,
+      sub: { plan, currentPeriodStart: period.start, currentPeriodEnd: period.end },
+      used: 0,
+      usedMessages: 0,
+      limit: plan.messagesPerCycle,
+      audioMultiplier,
+    }
+  }
   if (await isBetaTester(prisma, userId)) {
     const basePlan = await resolveBetaTesterPlan(prisma)
     const plan = buildBetaTesterPlan(basePlan)
@@ -106,6 +138,7 @@ export async function checkSubscriptionAllowance(prisma, userId) {
 }
 
 export async function applyTrialConsumption(prisma, user, opts) {
+  if (user?.role === 'superadmin') return { allowed: true, updated: user }
   if (user?.role === 'betatester') return { allowed: true, updated: user }
   if (await hasActiveSubscription(prisma, user.id)) return { allowed: true, updated: user }
   if (user.status === 'blocked') return { allowed: false, updated: user }
@@ -119,6 +152,10 @@ export async function applyTrialConsumption(prisma, user, opts) {
 
 export async function checkImageAllowance(prisma, userId) {
   const now = new Date()
+  if (await isSuperAdmin(prisma, userId)) {
+    const plan = buildUnlimitedPlan()
+    return { allowed: true, limit: plan.imagesPerCycle, used: 0, sub: { plan } }
+  }
   if (await isBetaTester(prisma, userId)) {
     const sub = await prisma.subscription.findFirst({
       where: { userId, status: 'active', currentPeriodEnd: { gt: now } },
@@ -172,6 +209,9 @@ export async function checkImageAllowance(prisma, userId) {
 }
 
 export async function consumeImageQuota(prisma, userId) {
+  if (await isSuperAdmin(prisma, userId)) {
+    return { ok: true, remaining: Number.MAX_SAFE_INTEGER }
+  }
   const allowance = await checkImageAllowance(prisma, userId)
   if (!allowance.allowed) {
     throw new Error(`Quota exceeded or trial: ${allowance.reason}`)

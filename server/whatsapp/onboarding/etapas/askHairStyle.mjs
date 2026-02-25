@@ -22,6 +22,7 @@ export async function handle(ctx) {
   const body = 'E a cor… qual tom você quer ver nela?'
   const outMsg = await prisma.onboardingMessage.create({ data: { conversationId: conv.id, userId: user.id, personaId: persona.id, step: 'askHairColor', direction: 'out', type: 'text', content: body, status: 'queued' } })
   const result = await sendWhatsAppList(sendId, phone, body, CORES_CABELO_LISTA, 'Cor do cabelo', 'Ver opções')
+  let metadata = undefined
   if (!result.ok) {
     const fallback = [
       { id: 'cor_preto', title: 'PRETO' },
@@ -29,7 +30,8 @@ export async function handle(ctx) {
       { id: 'cor_castanho', title: 'CASTANHO' },
     ]
     await sendWhatsAppButtons(sendId, phone, 'Selecione a cor do cabelo:', fallback)
+    metadata = { buttons: fallback }
   }
-  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed' } })
+  await prisma.onboardingMessage.update({ where: { id: outMsg.id }, data: { status: result.ok ? 'sent' : 'failed', metadata } })
   return true
 }
