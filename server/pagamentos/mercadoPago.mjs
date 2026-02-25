@@ -13,6 +13,7 @@ function getCycleDaysForPlan(planName, env) {
 }
 
 let econixTokenCache = { token: null, expiresAt: 0, base: null }
+const econixPendingMd = new Map()
 
 function getEconixBase(env) {
   const base = (env.ECONIX_API_BASE_URL || env.ECONIX_API_BASE || env.ECONIX_BASE_URL || 'https://api.econixhub.com').toString().trim()
@@ -59,9 +60,7 @@ function gerarNomeAleatorio() {
 async function getEconixToken({ env, fetchImpl }) {
   const now = Date.now()
   const bases = getEconixBases(env)
-  if (econixTokenCache.token && econixTokenCache.expiresAt > now + 10000 && econixTokenCache.base && bases.includes(econixTokenCache.base)) {
-    return { token: econixTokenCache.token, base: econixTokenCache.base }
-  }
+  econixTokenCache = { token: null, expiresAt: 0, base: null }
   const clientId = (env.ECONIX_CLIENT_ID || '').toString().trim()
   const clientSecret = (env.ECONIX_CLIENT_SECRET || '').toString().trim()
   if (!clientId || !clientSecret) throw new Error('Gateway não configurado')
@@ -109,14 +108,16 @@ async function createPixPaymentEconix({ value, md, userPhone, payerEmail, payerN
   const safePhone = (userPhone || '').toString().replace(/[^\d]/g, '') || gerarNumeroAleatorio(11)
   const email = `${safePhone}@gmail.com`
   const name = (payerName || '').toString().trim() || gerarNomeAleatorio()
-  const enc = Buffer.from(JSON.stringify(md || {})).toString('base64url')
-  const externalId = `cz:${enc}`
+  const rawMd = JSON.stringify(md || {})
+  const short = crypto.createHash('sha1').update(rawMd).digest('base64url').slice(0, 16)
+  const externalId = `cz:${short}`
   const baseRaw = (env.WEBHOOK_BASE_URL || env.WHATSAPP_URL_WEBHOOK_BASE || '').toString().trim()
   const baseWebhook = baseRaw.replace(/\/api\/?$/i, '').replace(/\/$/, '')
-  const clientCallbackUrl = (env.ECONIX_CALLBACK_URL || (baseWebhook ? `${baseWebhook}/api/webhook/pagamentos` : '')).toString().trim()
+  let clientCallbackUrl = (env.ECONIX_CALLBACK_URL || (baseWebhook ? `${baseWebhook}/api/webhook/pagamentos` : '')).toString().trim()
   const document = (env.ECONIX_PAYER_DOCUMENT || '').toString().trim() || gerarCpfAleatorio()
+  const amountNum = Number((Number(value || 0)).toFixed(2))
   const payload = {
-    amount: Number(value),
+    amount: amountNum,
     external_id: externalId,
     ...(clientCallbackUrl ? { clientCallbackUrl } : {}),
     payer: {
@@ -125,6 +126,20 @@ async function createPixPaymentEconix({ value, md, userPhone, payerEmail, payerN
       document,
     },
   }
+  try {
+    const dev = ((process.env.NODE_ENV || '').toString().trim().toLowerCase() !== 'production')
+    if (dev) {
+      console.log('[ECONIX PAY] criando depósito', { base, amount: amountNum, external_id: externalId, clientCallbackUrl, payer: { name, email, document } })
+    } else {
+      console.log('[ECONIX PAY] criando depósito', {
+        base,
+        amount: amountNum,
+        hasCallback: Boolean(clientCallbackUrl),
+        hasExternal: Boolean(externalId),
+        payer: { name: true, email: true, document: '***' },
+      })
+    }
+  } catch {}
   let depRes = null
   const startedAt = Date.now()
   try {
@@ -154,6 +169,10 @@ async function createPixPaymentEconix({ value, md, userPhone, payerEmail, payerN
     console.error('[ECONIX PAY] resposta sem qrcode', { keys: Object.keys(dep || {}) })
     throw new Error('ECONIX não retornou qrcode')
   }
+  try {
+    econixPendingMd.set(txId, md || {})
+    setTimeout(() => { try { econixPendingMd.delete(txId) } catch {} }, 2 * 60 * 60 * 1000)
+  } catch {}
   const qrBase64 = await gerarBase64QrCodePix({ copiaECola: qr })
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
   return {
@@ -306,9 +325,15 @@ async function applyPaymentApproval({ prisma, ensureUserByPhone, paymentId, stat
     })
   }
 
-  if (mdType === 'assinatura' && mdPlanId && mdUserPhone) {
+  if (mdType === 'assinatura' && (mdPlanId || mdAction === 'plano_teste') && mdUserPhone) {
     const user = await ensureUserByPhone(mdUserPhone)
-    const plan = await prisma.plan.findUnique({ where: { id: mdPlanId } })
+    let plan = null
+    if (mdAction === 'plano_teste') {
+      plan = await prisma.plan.findFirst({ where: { active: true, name: { contains: 'semanal', mode: 'insensitive' } }, orderBy: { price: 'asc' } })
+      if (!plan && mdPlanId) plan = await prisma.plan.findUnique({ where: { id: mdPlanId } })
+    } else {
+      plan = await prisma.plan.findUnique({ where: { id: mdPlanId } })
+    }
     if (plan) {
       const now = new Date()
       const cycleDays = getCycleDaysForPlan(plan.name, env)
@@ -441,11 +466,11 @@ async function applyPaymentApproval({ prisma, ensureUserByPhone, paymentId, stat
   return { ok: true, paymentId: paymentId.toString() }
 }
 
-export async function processEconixWebhook({ prisma, ensureUserByPhone, body, env = process.env }) {
+export async function processEconixWebhook({ prisma, ensureUserByPhone, body, query, env = process.env }) {
   const hasSignal =
-    Boolean(body?.external_id || body?.externalId || body?.transactionId || body?.transaction_id)
+    Boolean(body?.external_id || body?.externalId || body?.transactionId || body?.transaction_id || query?.external_id || query?.externalId)
   if (!hasSignal) return { handled: false }
-  const paymentId = (body?.transactionId || body?.transaction_id || body?.external_id || body?.externalId || '').toString().trim() || crypto.randomUUID()
+  const paymentId = (body?.transactionId || body?.transaction_id || body?.external_id || body?.externalId || query?.external_id || query?.externalId || '').toString().trim() || crypto.randomUUID()
   const statusRaw = (body?.status || body?.paymentStatus || body?.transactionStatus || '').toString().trim().toUpperCase()
   const amount = Number(body?.amount || body?.value || 0) || 0
   const currency = (body?.currency || body?.currency_id || 'BRL').toString()
@@ -453,15 +478,15 @@ export async function processEconixWebhook({ prisma, ensureUserByPhone, body, en
     console.log('[ECONIX PAY] callback recebido', {
       paymentId,
       status: statusRaw || null,
-      hasExternalId: Boolean(body?.external_id || body?.externalId),
+      hasExternalId: Boolean(body?.external_id || body?.externalId || query?.external_id || query?.externalId),
       keys: Object.keys(body || {}).slice(0, 20),
     })
   } catch {}
-  if (!(statusRaw === 'PAID' || statusRaw === 'APPROVED' || statusRaw === 'CONFIRMED' || statusRaw === 'SUCCESS')) {
+  if (!(statusRaw === 'PAID' || statusRaw === 'APPROVED' || statusRaw === 'CONFIRMED' || statusRaw === 'SUCCESS' || statusRaw === 'COMPLETED')) {
     return { handled: true, ok: true, paymentId }
   }
-  const externalId = (body?.external_id || body?.externalId || '').toString().trim()
-  const parsed = parseEconixExternalId(externalId) || {}
+  const externalId = (body?.external_id || body?.externalId || query?.external_id || query?.externalId || '').toString().trim()
+  const parsed = parseEconixExternalId(externalId) || econixPendingMd.get(paymentId) || {}
   const md = { ...(body?.metadata || body?.meta || {}), ...parsed }
   const result = await applyPaymentApproval({ prisma, ensureUserByPhone, paymentId, status: 'approved', md, amount, currency, rawPayment: body, env })
   return { handled: true, ...result }
@@ -546,9 +571,15 @@ export async function processMercadoPagoWebhook({ prisma, ensureUserByPhone, bod
       })
     }
 
-    if (mdType === 'assinatura' && mdPlanId && mdUserPhone) {
+    if (mdType === 'assinatura' && (mdPlanId || mdAction === 'plano_teste') && mdUserPhone) {
       const user = await ensureUserByPhone(mdUserPhone)
-      const plan = await prisma.plan.findUnique({ where: { id: mdPlanId } })
+      let plan = null
+      if (mdAction === 'plano_teste') {
+        plan = await prisma.plan.findFirst({ where: { active: true, name: { contains: 'semanal', mode: 'insensitive' } }, orderBy: { price: 'asc' } })
+        if (!plan && mdPlanId) plan = await prisma.plan.findUnique({ where: { id: mdPlanId } })
+      } else {
+        plan = await prisma.plan.findUnique({ where: { id: mdPlanId } })
+      }
       if (plan) {
         const now = new Date()
         const cycleDays = getCycleDaysForPlan(plan.name, env)

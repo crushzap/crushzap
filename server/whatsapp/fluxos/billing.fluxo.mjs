@@ -185,7 +185,7 @@ export async function handleBilling(ctx) {
   }
 
   if (reply === 'billing_renovar_mensal' || reply === 'billing_renovar_semanal' || reply === 'billing_upgrade_mensal' || reply === 'billing_creditos_100' || reply === 'billing_pacote_5' || reply === 'billing_pacote_15' || reply === 'billing_pacote_30') {
-    const plans = await prisma.plan.findMany({ where: { active: true }, orderBy: { price: 'asc' } })
+    const plans = await prisma.plan.findMany({ where: { active: true, NOT: { name: { contains: 'teste', mode: 'insensitive' } } }, orderBy: { price: 'asc' } })
     const semanal = plans.find((p) => (p.name || '').toString().toLowerCase().includes('semanal'))
     const mensal = plans.find((p) => (p.name || '').toString().toLowerCase().includes('mensal'))
 

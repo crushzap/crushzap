@@ -18,7 +18,7 @@ export async function handleUpgrade(ctx) {
   }
 
   const enviarPixMensal = async (intro, plansClicks, autoPixSent) => {
-    const plans = await prisma.plan.findMany({ where: { active: true }, orderBy: { price: 'asc' } })
+    const plans = await prisma.plan.findMany({ where: { active: true, NOT: { name: { contains: 'teste', mode: 'insensitive' } } }, orderBy: { price: 'asc' } })
     const mensal = plans.find((p) => (p.name || '').toString().toLowerCase().includes('mensal'))
     if (!mensal) return false
     const pix = await createPixPayment({ prisma, type: 'assinatura', planId: mensal.id, userPhone: phone, phoneNumberId: sendId, payerEmail: user.email || undefined, payerName: user.name || undefined })
@@ -267,7 +267,7 @@ export async function handleUpgrade(ctx) {
     const prevFlow = maps.upgradeFlow.get(user.id) || {}
     const plansClicks = Number(prevFlow?.plansClicks || 0) + 1
     const autoPixSent = Boolean(prevFlow?.autoPixSent)
-    const plans = await prisma.plan.findMany({ where: { active: true }, orderBy: { price: 'asc' } })
+    const plans = await prisma.plan.findMany({ where: { active: true, NOT: { name: { contains: 'teste', mode: 'insensitive' } } }, orderBy: { price: 'asc' } })
     const desc = plans.length
       ? `Separei tudo pra você. *Toque em ASSINAR AGORA* para escolher um plano.\n\n${plans.map((p) => {
           const name = (p.name || '').toUpperCase()
@@ -312,7 +312,7 @@ export async function handleUpgrade(ctx) {
   }
 
   if (reply === 'upgrade_assinar_agora' || (flow?.step === 'plans' && typed.includes('assinar'))) {
-    const plans = await prisma.plan.findMany({ where: { active: true }, orderBy: { price: 'asc' } })
+    const plans = await prisma.plan.findMany({ where: { active: true, NOT: { name: { contains: 'teste', mode: 'insensitive' } } }, orderBy: { price: 'asc' } })
     const body = plans.length ? 'Qual plano você deseja?\n\n*Toque em um dos botões abaixo* para escolher.' : 'No momento não encontrei planos disponíveis.'
     const buttonOptions = plans.map((p) => ({ id: `upgrade_plan_${p.id}`, title: p.name.toUpperCase().slice(0, 20) }))
     const created = await salvarSaidaEEnviar({

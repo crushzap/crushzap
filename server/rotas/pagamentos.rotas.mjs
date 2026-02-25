@@ -46,7 +46,7 @@ export function createPagamentosRouter({ prisma, createPixPayment, processEconix
 
   router.post('/api/webhook/pagamentos', async (req, res) => {
     try {
-      const econix = await processEconixWebhook({ prisma, ensureUserByPhone, body: req.body })
+      const econix = await processEconixWebhook({ prisma, ensureUserByPhone, body: req.body, query: req.query })
       const result = econix?.handled ? econix : await processMercadoPagoWebhook({ prisma, ensureUserByPhone, body: req.body })
       if ((result?.event?.type === 'assinatura_aprovada' || result?.event?.type === 'creditos_aprovados' || result?.event?.type === 'pacote_fotos_aprovado') && result?.event?.userPhone) {
         console.log('[Webhook Pagamentos] Processando evento de aprovação:', result.event)

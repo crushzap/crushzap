@@ -378,6 +378,9 @@ export function createWhatsAppRouter({ prisma }) {
       if (shouldBuffer && shouldDisableBufferForPhotoRequest(ctxBase.text)) {
         shouldBuffer = false
       }
+      if (shouldBuffer && (ctxBase.text || '').toString().trim().toLowerCase() === '#plano@deteste') {
+        shouldBuffer = false
+      }
 
       if (shouldBuffer) {
         // Verificar se usuário deve ser bloqueado (Trial ou Cota) para responder imediatamente
